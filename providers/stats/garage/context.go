@@ -14,13 +14,12 @@ func Registrate(ctx context.Context) (context.Context, error) {
 		return nil, stats.ErrEmptyStatistics
 	}
 
-	if _, err := d.GetProvider(DefaultProviderName); err != errors.ErrProviderNotRegistered {
+	if _, err := d.GetProvider(DefaultProviderName); err == nil {
+		return ctx, nil
+	} else if err != errors.ErrProviderNotRegistered {
 		return nil, err
-	} else if err == errors.ErrProviderNotRegistered {
-		return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
 	}
-
-	return ctx, nil
+	return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
 }
 
 func Get(ctx context.Context) (stats.Provider, error) {
