@@ -1,7 +1,6 @@
 package types
 
 import (
-	// stdlib
 	"database/sql/driver"
 	"encoding/json"
 	"errors"

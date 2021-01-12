@@ -1,7 +1,6 @@
 package ch
 
 import (
-	// other
 	"github.com/jmoiron/sqlx"
 )
 

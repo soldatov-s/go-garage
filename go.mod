@@ -19,7 +19,7 @@ require (
 	github.com/lib/pq v1.7.0
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
-	github.com/ory/dockertest v3.3.5+incompatible
+	github.com/ory/dockertest v3.3.5+incompatible // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pressly/goose v2.7.0-rc5+incompatible
 	github.com/prometheus/client_golang v1.7.1
@@ -29,5 +29,4 @@ require (
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.6.1
 	github.com/vrischmann/envconfig v1.2.0
-	gitlab.com/pztrn/go-uuid v0.0.0-20190208164458-d6cc46783d2b
 )

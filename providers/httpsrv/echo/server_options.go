@@ -7,8 +7,6 @@ import (
 	"github.com/soldatov-s/go-garage/providers/httpsrv"
 )
 
-// local
-
 const (
 	defaultBodyReadTimeout   = 10
 	defaultBodyWriteTimeout  = 10

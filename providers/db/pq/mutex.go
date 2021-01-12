@@ -1,16 +1,14 @@
 package pq
 
 import (
-	// stdlib
+	//
 	"hash/crc32"
 	"strings"
 	"sync"
 	"time"
 
-	// local
 	"github.com/soldatov-s/go-garage/providers/db"
 
-	// other
 	"github.com/jmoiron/sqlx"
 )
 

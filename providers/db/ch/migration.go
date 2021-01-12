@@ -1,7 +1,7 @@
 package ch
 
 import (
-	// stdlib
+	//
 	"database/sql"
 )
 

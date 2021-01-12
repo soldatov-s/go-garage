@@ -1,16 +1,12 @@
 package echo
 
 import (
-	// stdlib
 	"strings"
 
-	// local
-	"github.com/soldatov-s/go-garage/providers/errors"
-
-	// other
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
-	"gitlab.com/pztrn/go-uuid"
+	"github.com/soldatov-s/go-garage/providers/errors"
 )
 
 // HandlerLogger handler that adds requesID into logger fields
@@ -21,7 +17,7 @@ func HandlerLogger(parent *zerolog.Logger, ec echo.Context) (log zerolog.Logger,
 
 	requestID = ec.Request().Header.Get("x-request-id")
 	if requestID == "" {
-		newUUID, err := uuid.NewV4()
+		newUUID, err := uuid.NewUUID()
 		if err != nil {
 			parent.Error().Err(err).Msg("Failed to generate new requestID")
 			return *parent, "", nil

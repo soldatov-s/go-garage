@@ -1,7 +1,6 @@
 package pq
 
 import (
-	// other
 	"github.com/jmoiron/sqlx"
 )
 

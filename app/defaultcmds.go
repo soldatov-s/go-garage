@@ -1,7 +1,6 @@
 package app
 
 import (
-	// other
 	"github.com/spf13/cobra"
 )
 

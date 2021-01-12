@@ -1,14 +1,11 @@
 package stats
 
 import (
-	// stdlib
 	"context"
 	"testing"
 
-	// local
 	"github.com/soldatov-s/go-garage/providers/logger"
 	"github.com/stretchr/testify/require"
-	// other
 )
 
 func TestStatisticsInitialize(t *testing.T) {

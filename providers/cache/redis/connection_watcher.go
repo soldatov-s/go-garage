@@ -1,10 +1,8 @@
 package redis
 
 import (
-	// stdlib
 	"time"
 
-	// other
 	"github.com/KromDaniel/rejonson"
 	"github.com/go-redis/redis"
 )

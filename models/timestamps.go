@@ -1,10 +1,8 @@
 package models
 
 import (
-	// stdlib
 	"time"
 
-	// local
 	"github.com/soldatov-s/go-garage/types"
 )
 

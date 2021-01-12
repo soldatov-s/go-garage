@@ -1,13 +1,11 @@
 package services
 
 import (
-	// stdlib
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	// other
 	"github.com/stretchr/testify/require"
 )
 

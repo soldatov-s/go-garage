@@ -1,7 +1,6 @@
 package logger
 
 import (
-	// other
 	"fmt"
 	"runtime"
 	"strconv"

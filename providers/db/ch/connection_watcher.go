@@ -1,10 +1,9 @@
 package ch
 
 import (
-	// stdlib
+	//
 	"time"
 
-	// other
 	"github.com/jmoiron/sqlx"
 	// ClickHouse driver.
 	_ "github.com/ClickHouse/clickhouse-go"

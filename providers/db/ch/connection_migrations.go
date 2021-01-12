@@ -1,13 +1,12 @@
 package ch
 
 import (
-	// stdlib
+	//
 
 	"os"
 	"strings"
 	"time"
 
-	// other
 	"github.com/pressly/goose"
 	"github.com/rs/zerolog"
 )

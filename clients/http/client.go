@@ -1,11 +1,10 @@
 package httpclient
 
 import (
-	// stdlib
+	//
 	"net"
 	"net/http"
 	"time"
-	// local
 )
 
 const (

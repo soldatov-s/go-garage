@@ -1,7 +1,7 @@
 package rabbitmq
 
 // import (
-// 	// stdlib
+// 	//
 
 // 	"context"
 // 	"encoding/json"
@@ -10,10 +10,10 @@ package rabbitmq
 // 	"testing"
 // 	"time"
 
-// 	// local
+//
 // 	"github.com/soldatov-s/go-garage/providers/logger"
 
-// 	// other
+//
 
 // 	"github.com/ory/dockertest"
 // 	"github.com/streadway/amqp"

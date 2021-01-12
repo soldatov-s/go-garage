@@ -1,16 +1,12 @@
 package redis
 
 import (
-	// stdlib
 	"sync"
 	"time"
 
-	// local
-	"github.com/soldatov-s/go-garage/providers/cache"
-
-	// other
 	"github.com/KromDaniel/rejonson"
-	uuid "gitlab.com/pztrn/go-uuid"
+	"github.com/google/uuid"
+	"github.com/soldatov-s/go-garage/providers/cache"
 )
 
 const (
@@ -104,7 +100,7 @@ func (redisLock *Mutex) commonLock() (err error) {
 		return err
 	}
 
-	newUUID, err := uuid.NewV4()
+	newUUID, err := uuid.NewUUID()
 	if err != nil {
 		return err
 	}

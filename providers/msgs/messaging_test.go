@@ -1,7 +1,6 @@
 package msgs
 
 import (
-	// stdlib
 	"testing"
 )
 

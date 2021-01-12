@@ -1,7 +1,7 @@
 package pq
 
 import (
-	// stdlib
+	//
 	"database/sql"
 )
 

@@ -1,10 +1,10 @@
 package config
 
 // import (
-// 	// stdlib
+// 	//
 // 	"testing"
 
-// 	// other
+//
 // 	"github.com/stretchr/testify/require"
 // )
 
