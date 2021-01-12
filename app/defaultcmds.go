@@ -1,4 +1,4 @@
-package meta
+package app
 
 import (
 	// other
