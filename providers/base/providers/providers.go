@@ -34,7 +34,7 @@ func (bp *BaseProviders) RegisterProvider(providerName string, iface interface{}
 	}
 
 	if _, found := bp.providers.LoadOrStore(providerName, iface); found {
-		return errors.ErrProviderAlreadyRegistered
+		return errors.ErrProviderAlreadyRegistered(providerName)
 	}
 
 	return nil

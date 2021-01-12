@@ -68,7 +68,7 @@ func (cfg *Configuration) RegisterProvider(providerName string, iface Provider) 
 	}
 
 	if _, found := cfg.providers.LoadOrStore(providerName, iface); found {
-		return errors.ErrProviderAlreadyRegistered
+		return errors.ErrProviderAlreadyRegistered(providerName)
 	}
 
 	cfg.SetProvidersOrder(providerName)
