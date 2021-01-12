@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	defaultBodyReadTimeout   = 10
-	defaultBodyWriteTimeout  = 10
-	defaultHeaderReadTimeout = 5
+	defaultBodyReadTimeout   = 10 * time.Second
+	defaultBodyWriteTimeout  = 10 * time.Second
+	defaultHeaderReadTimeout = 5 * time.Second
 )
 
 type Config struct {
