@@ -38,7 +38,7 @@ func GetPackageLogger(ctx context.Context, emptyStruct interface{}) zerolog.Logg
 		Registrate(ctx)
 	}
 
-	a := meta.GetApp(ctx)
+	a := meta.Get(ctx)
 	l := log.GetLogger(a.Name, nil)
 	return Initialize(l, emptyStruct)
 }

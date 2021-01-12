@@ -10,8 +10,8 @@ const (
 	AppItem gogarage.GarageItem = "app"
 )
 
-func CreateApp(ctx context.Context) (context.Context, *ApplicationInfo) {
-	v := GetApp(ctx)
+func Registrate(ctx context.Context) (context.Context, *ApplicationInfo) {
+	v := Get(ctx)
 	if v != nil {
 		return ctx, v
 	}
@@ -24,7 +24,7 @@ func CreateApp(ctx context.Context) (context.Context, *ApplicationInfo) {
 	return context.WithValue(ctx, AppItem, a), a
 }
 
-func GetApp(ctx context.Context) *ApplicationInfo {
+func Get(ctx context.Context) *ApplicationInfo {
 	v := ctx.Value(AppItem)
 	if v != nil {
 		return v.(*ApplicationInfo)
@@ -32,10 +32,10 @@ func GetApp(ctx context.Context) *ApplicationInfo {
 	return nil
 }
 
-func FillAppInfo(ctx context.Context, name, builded, hash, version, description string) context.Context {
-	a := GetApp(ctx)
+func SetAppInfo(ctx context.Context, name, builded, hash, version, description string) context.Context {
+	a := Get(ctx)
 	if a == nil {
-		ctx, a = CreateApp(ctx)
+		ctx, a = Registrate(ctx)
 	}
 	a.Name = name
 	a.Builded = builded

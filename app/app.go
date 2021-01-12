@@ -20,7 +20,7 @@ import (
 // Loop is application loop, exit on SIGTERM
 func Loop(ctx context.Context) {
 	var closeSignal chan os.Signal
-	m := meta.GetApp(ctx)
+	m := meta.Get(ctx)
 	log := logger.Get(ctx).GetLogger(m.Name, nil)
 
 	exit := make(chan struct{})

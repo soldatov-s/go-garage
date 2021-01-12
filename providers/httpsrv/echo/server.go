@@ -95,7 +95,7 @@ func NewEnity(ctx context.Context, serverName string, options interface{}) (*Eni
 
 func (srv *Enity) buildSwagger(apiVer string) {
 	var a *meta.ApplicationInfo
-	srv.ctx, a = meta.CreateApp(srv.ctx)
+	srv.ctx, a = meta.Registrate(srv.ctx)
 
 	swaggerName := a.Name + " " + srv.name + " API v" + apiVer
 	// Build swagger
