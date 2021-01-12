@@ -67,7 +67,7 @@ func (p *Provider) GetEnity(connectionName string) (interface{}, error) {
 
 // RegisterReadyCheck should register a function for /health/ready
 // endpoint.
-func (p *Provider) RegisterReadyCheck(connectionName, dependencyName string, checkFunc stats.CheckFunc) error {
+func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
 	}
@@ -76,17 +76,28 @@ func (p *Provider) RegisterReadyCheck(connectionName, dependencyName string, che
 		return stats.ErrCheckFuncIsNil
 	}
 
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
+	var (
+		err  error
+		conn *Enity
+	)
+	p.Entitys.Range(func(k, _ interface{}) bool {
+		conn, err = p.getEnity(k.(string))
+		if err != nil {
+			return false
+		}
+		if err = conn.RegisterReadyCheck(dependencyName, checkFunc); err != nil {
+			return false
+		}
 
-	return conn.RegisterReadyCheck(dependencyName, checkFunc)
+		return true
+	})
+
+	return err
 }
 
 // RegisterAliveCheck should register a function for /health/alive
 // endpoint.
-func (p *Provider) RegisterAliveCheck(connectionName, dependencyName string, checkFunc stats.CheckFunc) error {
+func (p *Provider) RegisterAliveCheck(dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
 	}
@@ -95,27 +106,48 @@ func (p *Provider) RegisterAliveCheck(connectionName, dependencyName string, che
 		return stats.ErrCheckFuncIsNil
 	}
 
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
+	var (
+		err  error
+		conn *Enity
+	)
+	p.Entitys.Range(func(k, _ interface{}) bool {
+		conn, err = p.getEnity(k.(string))
+		if err != nil {
+			return false
+		}
+		if err = conn.RegisterAliveCheck(dependencyName, checkFunc); err != nil {
+			return false
+		}
 
-	return conn.RegisterAliveCheck(dependencyName, checkFunc)
+		return true
+	})
+
+	return err
 }
 
 // RegisterMetric should register a metric of defined type. Passed
 // metricName should be used only as internal identifier. Provider
 // should provide instructions for using metricOptions as well as
 // cast to appropriate type.
-func (p *Provider) RegisterMetric(connectionName, metricName string, options interface{}) error {
+func (p *Provider) RegisterMetric(metricName string, options interface{}) error {
 	if metricName == "" {
 		return stats.ErrEmptyMetricName
 	}
 
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
+	var (
+		err  error
+		conn *Enity
+	)
+	p.Entitys.Range(func(k, _ interface{}) bool {
+		conn, err = p.getEnity(k.(string))
+		if err != nil {
+			return false
+		}
+		if err = conn.RegisterMetric(metricName, options); err != nil {
+			return false
+		}
 
-	return conn.RegisterMetric(metricName, options)
+		return true
+	})
+	return err
 }
