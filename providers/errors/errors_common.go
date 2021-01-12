@@ -34,5 +34,5 @@ func ErrInvalidEnityPointer(iface interface{}) error {
 }
 
 func ErrProviderAlreadyRegistered(name string) error {
-	return errors.New("provider " + name + "already registered")
+	return errors.New("provider " + name + " already registered")
 }
