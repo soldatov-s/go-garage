@@ -17,16 +17,16 @@ const (
 
 type Config struct {
 	// Address is an address on which HTTP server will listen.
-	Address string `envconfig:"default=0.0.0.0:9000"`
+	Address string `envconfig:"optional"`
 	// DisableHTTP2 disabled HTTP2 features (only HTTP 1.0/1.1 will work).
-	DisableHTTP2 bool `envconfig:"default=true"`
+	DisableHTTP2 bool `envconfig:"optional"`
 	// Debug enables internal echo debugging features.
-	Debug bool `envconfig:"default=false"`
+	Debug bool `envconfig:"optional"`
 	// HideBanner disables showing Echo banner on server's start.
-	HideBanner bool `envconfig:"default=true"`
+	HideBanner bool `envconfig:"optional"`
 	// HidePort disables showing address and port on which Echo will listen
 	// for connections.
-	HidePort bool `envconfig:"default=true"`
+	HidePort bool `envconfig:"optional"`
 	// Path to certificate for HTTPS
 	CertFile string `envconfig:"optional"`
 	// Path to key for HTTPS
@@ -35,13 +35,13 @@ type Config struct {
 	// Timeouts
 	// BodyReadTimeout sets body reading timeout in seconds. Defaults
 	// to 10 seconds.
-	BodyReadTimeout time.Duration `envconfig:"default=10s"`
+	BodyReadTimeout time.Duration `envconfig:"optional"`
 	// BodyWriteTimeout sets body writing timeout in seconds. Defaults
 	// to 10 seconds.
-	BodyWriteTimeout time.Duration `envconfig:"default=10s"`
+	BodyWriteTimeout time.Duration `envconfig:"optional"`
 	// HeaderReadTimeout sets headers reading timeout in seconds. Defaults
 	// to 5 seconds.
-	HeaderReadTimeout time.Duration `envconfig:"default=5s"`
+	HeaderReadTimeout time.Duration `envconfig:"optional"`
 
 	// Middlewares for server endpoints
 	Middlewares []interface{} `envconfig:"-"`

@@ -5,28 +5,28 @@ import "time"
 const (
 	// Default DSN and connection parameters that will be passed to
 	// database driver.
-	defaultDSN = "redis://guest:guest@localhost:6379"
+	defaultDSN = "amqp://guest:guest@rabbitmq:5672"
 )
 
-// RabbitBaseOptions describes struct with base options
-type RabbitBaseOptions struct {
+// RabbitBaseConfig describes struct with base options
+type RabbitBaseConfig struct {
 	// ExchangeName is a name of rabbitmq exchange
 	ExchangeName string `envconfig:"optional"`
 	// RoutingKey is a routing key of rabbitmq exchange
 	RoutingKey string `envconfig:"optional"`
 }
 
-// ConsumerOptions describes struct with options for consumer
-type ConsumerOptions struct {
-	RabbitBaseOptions
+// ConsumerConfig describes struct with options for consumer
+type ConsumerConfig struct {
+	RabbitBaseConfig
 	// RabbitQueue is a name of rabbitmq queue
 	RabbitQueue   string `envconfig:"optional"`
 	RabbitConsume string `envconfig:"optional"`
 }
 
-// PublisherOptions describes struct with options for publisher
-type PublisherOptions struct {
-	RabbitBaseOptions
+// PublisherConfig describes struct with options for publisher
+type PublisherConfig struct {
+	RabbitBaseConfig
 }
 
 // Config represents configuration structure for every
@@ -35,14 +35,14 @@ type Config struct {
 	// DSN is a connection string in form of DSN. Example:
 	// amqp://user:password@host:port.
 	// Default: "amqp://guest:guest@rabbitmq:5672"
-	DSN string `envconfig:"default=amqp://guest:guest@rabbitmq:5672"`
+	DSN string `envconfig:"optional"`
 	// The BackOff policy (exponential back off) will try
 	// to establish a connection, and if it fails, will wait some time,
 	// then try again and if it fails, wait the same amount of time or longer.
-	BackoffPolicy []time.Duration `envconfig:"default=2s;5s;10s;15s;20s;25s"`
+	BackoffPolicy []time.Duration `envconfig:"optional"`
 
-	ConsumerOptions  *ConsumerOptions
-	PublisherOptions *PublisherOptions
+	ConsumerConfig  *ConsumerConfig
+	PublisherConfig *PublisherConfig
 }
 
 // Validate checks connection options. If required field is empty - it will

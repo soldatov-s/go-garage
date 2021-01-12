@@ -8,7 +8,7 @@ import (
 
 // Consumer is a RabbitConsumer
 type Consumer struct {
-	ConsumerOptions
+	ConsumerConfig
 	Conn             *amqp.Connection
 	Channel          *amqp.Channel
 	shutdownConsumer chan bool
@@ -16,9 +16,9 @@ type Consumer struct {
 	wg               sync.WaitGroup
 }
 
-func NewConsumer(cfg *ConsumerOptions) *Consumer {
+func NewConsumer(cfg *ConsumerConfig) *Consumer {
 	c := &Consumer{}
-	c.ConsumerOptions = *cfg
+	c.ConsumerConfig = *cfg
 	c.consumerStarted = make(chan bool)
 	c.shutdownConsumer = make(chan bool)
 

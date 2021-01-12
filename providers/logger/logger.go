@@ -103,8 +103,9 @@ func (l *Logger) InitializeDefault() {
 	l.Initialize(DefaultConfig())
 }
 
-func (l *Logger) Initialize(c *Config) {
-	switch strings.ToUpper(c.Level) {
+func (l *Logger) Initialize(cfg *Config) {
+	cfg.Validate()
+	switch strings.ToUpper(cfg.Level) {
 	case LoggerLevelDebug:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	case LoggerLevelInfo:
@@ -125,7 +126,7 @@ func (l *Logger) Initialize(c *Config) {
 
 	output := zerolog.ConsoleWriter{
 		Out:        os.Stdout,
-		NoColor:    c.NoColoredOutput,
+		NoColor:    cfg.NoColoredOutput,
 		TimeFormat: time.RFC3339,
 	}
 
@@ -147,7 +148,7 @@ func (l *Logger) Initialize(c *Config) {
 	}
 
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-	l.logger = zerolog.New(output).With().Timestamp().Logger().Hook(TracingHook{WithTrace: c.WithTrace})
+	l.logger = zerolog.New(output).With().Timestamp().Logger().Hook(TracingHook{WithTrace: cfg.WithTrace})
 
 	l.initialized = true
 }

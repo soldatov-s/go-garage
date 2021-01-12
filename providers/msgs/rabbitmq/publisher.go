@@ -7,14 +7,14 @@ import (
 
 // Publisher is a RabbitPublisher
 type Publisher struct {
-	PublisherOptions
+	PublisherConfig
 	Conn    *amqp.Connection
 	Channel *amqp.Channel
 }
 
-func NewPublisher(cfg *PublisherOptions) *Publisher {
+func NewPublisher(cfg *PublisherConfig) *Publisher {
 	p := &Publisher{}
-	p.PublisherOptions = *cfg
+	p.PublisherConfig = *cfg
 
 	return p
 }

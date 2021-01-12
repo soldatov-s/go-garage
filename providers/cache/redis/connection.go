@@ -22,7 +22,7 @@ type Enity struct {
 	ctx     context.Context
 	log     zerolog.Logger
 	name    string
-	options *ConnectionOptions
+	options *Config
 
 	Conn *rejonson.Client
 
@@ -51,9 +51,9 @@ func NewEnity(ctx context.Context, name string, opts interface{}) (*Enity, error
 	// We should not attempt to establish connection if passed options
 	// isn't OUR options.
 	var ok bool
-	conn.options, ok = opts.(*ConnectionOptions)
+	conn.options, ok = opts.(*Config)
 	if !ok {
-		return nil, cache.ErrInvalidConnectionOptionsPointer(ConnectionOptions{})
+		return nil, cache.ErrInvalidConnectionOptionsPointer(Config{})
 	}
 
 	conn.options.Validate()

@@ -28,33 +28,33 @@ type ConnectionOptions struct {
 	DSN string `envconfig:"optional"`
 	// MaxConnectionLifetime specifies maximum connection lifetime
 	// for reusage. Default: 10 seconds.
-	MaxConnectionLifetime time.Duration `envconfig:"default=10s"`
+	MaxConnectionLifetime time.Duration `envconfig:"optional"`
 	// MaxIdleConnections specify maximum connections to database that
 	// can stay in idle state. Default: 10 connections.
-	MaxIdleConnections int `envconfig:"default=10"`
+	MaxIdleConnections int `envconfig:"optional"`
 	// MaxOpenedConnections specify upper limit for opened connections
 	// count. Default: 30 connections.
-	MaxOpenedConnections int `envconfig:"default=10"`
+	MaxOpenedConnections int `envconfig:"optional"`
 	// Options is a string with additional options that will be passed
 	// to connection. Default: "database=default&read_timeout=10&write_timeout=20&compress=true&debug=true".
-	Options string `envconfig:"database=default&read_timeout=10&write_timeout=20&compress=true&debug=true"`
+	Options string `envconfig:"optional"`
 	// QueueWorkerTimeout is a timeout in seconds which will be used by
 	// queue worker for queue processing. Defaulting to 1. If it'll be
 	// set to 0 - it will be reset to 1.
-	QueueWorkerTimeout time.Duration `envconfig:"default=1s"`
+	QueueWorkerTimeout time.Duration `envconfig:"optional"`
 	// StartQueueWorker indicates to connection controller that it should
 	// also start asynchronous queue worker. This worker can be used for
 	// bulking (executing many insert/update/delete requests without
 	// big performance penalties).
-	StartQueueWorker bool `envconfig:"default=false"`
+	StartQueueWorker bool `envconfig:"optional"`
 	// StartWatcher indicates to connection controller that it should
 	// also start asynchronous connection watcher.
-	StartWatcher bool `envconfig:"default=false"`
+	StartWatcher bool `envconfig:"optional"`
 	// Timeout is a timeout in seconds for connection checking. Every
 	// this count of seconds database connection will be checked for
 	// aliveness and, if it dies, attempt to reestablish connection
 	// will be made. Default timeout is 10 seconds.
-	Timeout time.Duration `envconfig:"default=10s"`
+	Timeout time.Duration `envconfig:"optional"`
 	// MigrateOptions struct contains options for migrate
 	MigrateOptions *MigrateOptions
 }
