@@ -3,24 +3,24 @@ package rabbitmq
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/soldatov-s/go-garage/providers/msgs"
 )
 
 func Registrate(ctx context.Context) (context.Context, error) {
-	ctx = db.Registrate(ctx)
-	d := db.Get(ctx)
+	ctx = msgs.Registrate(ctx)
+	d := msgs.Get(ctx)
 	if d == nil {
-		return nil, db.ErrEmptyDatabases
+		return nil, msgs.ErrEmptyMsgs
 	}
 
 	return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
 }
 
-func Get(ctx context.Context) (db.Provider, error) {
-	d := db.Get(ctx)
+func Get(ctx context.Context) (msgs.Provider, error) {
+	d := msgs.Get(ctx)
 	if d == nil {
-		return nil, db.ErrEmptyDatabases
+		return nil, msgs.ErrEmptyMsgs
 	}
 
 	return d.GetProvider(DefaultProviderName)
