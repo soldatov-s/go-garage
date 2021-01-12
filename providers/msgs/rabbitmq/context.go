@@ -14,7 +14,13 @@ func Registrate(ctx context.Context) (context.Context, error) {
 		return nil, msgs.ErrEmptyMsgs
 	}
 
-	return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
+	if _, err := d.GetProvider(DefaultProviderName); err != errors.ErrProviderNotRegistered {
+		return nil, err
+	} else if err == errors.ErrProviderNotRegistered {
+		return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
+	}
+
+	return ctx, nil
 }
 
 func Get(ctx context.Context) (msgs.Provider, error) {
