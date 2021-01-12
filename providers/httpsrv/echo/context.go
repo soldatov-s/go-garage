@@ -68,3 +68,12 @@ func GetEnityTypeCast(ctx context.Context, enityName string) (*Enity, error) {
 
 	return enityPointer, nil
 }
+
+func GetAPIVersionGroup(ctx context.Context, enityName, apiVersion string) (*Group, error) {
+	enity, err := GetEnityTypeCast(ctx, enityName)
+	if err != nil {
+		return nil, err
+	}
+
+	return enity.GetAPIVersionGroup(apiVersion)
+}
