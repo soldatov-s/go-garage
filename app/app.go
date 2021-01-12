@@ -120,7 +120,7 @@ func StartStatistics(ctx context.Context) error {
 }
 
 func providersOrder() []string {
-	return []string{db.ProvidersName, cache.ProvidersName, httpsrv.ProvidersName, stats.ProvidersName}
+	return []string{db.ProvidersName, cache.ProvidersName, httpsrv.ProvidersName}
 }
 
 // Start all providers
@@ -134,7 +134,7 @@ func Start(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return StartStatistics(ctx)
 }
 
 // Shutdown all providers
