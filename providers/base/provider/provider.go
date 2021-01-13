@@ -59,12 +59,14 @@ type Provider struct {
 	Log     *zerolog.Logger
 	Logger  *logger.Logger
 	ctx     context.Context
+	Name    string
 }
 
 // NewProvider creates provider
 func NewProvider(ctx context.Context, providersName, providerName string) *Provider {
 	bp := &Provider{
-		ctx: logger.Registrate(ctx),
+		ctx:  logger.Registrate(ctx),
+		Name: providerName,
 	}
 	bp.Log = logger.Get(bp.ctx).GetLogger(providersName, nil)
 	bp.Log.Info().Msg("initializing " + providerName + " provider...")
@@ -75,7 +77,7 @@ func NewProvider(ctx context.Context, providersName, providerName string) *Provi
 // Shutdown should shutdown all known entitys.
 func (bp *Provider) Shutdown() error {
 	var err error
-	bp.Log.Info().Msg("shutdown provider...")
+	bp.Log.Info().Msg("shutdown provider" + bp.Name + "...")
 	bp.Entitys.Range(func(k, v interface{}) bool {
 		if err = v.(Entity).Shutdown(); err != nil {
 			return false
@@ -89,7 +91,7 @@ func (bp *Provider) Shutdown() error {
 // Start starts all known entitys.
 func (bp *Provider) Start() error {
 	var err error
-	bp.Log.Info().Msg("start provider...")
+	bp.Log.Info().Msg("start provider " + bp.Name + "...")
 	bp.Entitys.Range(func(k, v interface{}) bool {
 		if err = v.(Entity).Start(); err != nil {
 			return false

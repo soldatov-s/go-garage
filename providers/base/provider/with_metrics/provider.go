@@ -56,3 +56,31 @@ func (bp *Provider) GetReadyHandlers(prefix string) (stats.MapCheckFunc, error) 
 	})
 	return handlers, nil
 }
+
+// Shutdown should shutdown all known entitys.
+func (bp *Provider) Shutdown() error {
+	var err error
+	bp.Log.Info().Msg("shutdown provider" + bp.Name + "...")
+	bp.Entitys.Range(func(k, v interface{}) bool {
+		if err = v.(Entity).Shutdown(); err != nil {
+			return false
+		}
+
+		return true
+	})
+	return err
+}
+
+// Start starts all known entitys.
+func (bp *Provider) Start() error {
+	var err error
+	bp.Log.Info().Msg("start provider " + bp.Name + "...")
+	bp.Entitys.Range(func(k, v interface{}) bool {
+		if err = v.(Entity).Start(); err != nil {
+			return false
+		}
+
+		return true
+	})
+	return err
+}
