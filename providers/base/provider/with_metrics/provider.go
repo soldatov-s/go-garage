@@ -9,9 +9,9 @@ import (
 
 type Entity interface {
 	provider.Entity
-	GetMetrics(string) stats.MapMetricsOptions
-	GetAliveHandlers(string) stats.MapCheckFunc
-	GetReadyHandlers(string) stats.MapCheckFunc
+	GetMetrics(prefix string) stats.MapMetricsOptions
+	GetAliveHandlers(prefix string) stats.MapCheckFunc
+	GetReadyHandlers(prefix string) stats.MapCheckFunc
 }
 
 // Provider provides abstract worker.

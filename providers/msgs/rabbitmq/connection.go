@@ -377,7 +377,7 @@ func (conn *Enity) Ping() (err error) {
 }
 
 // GetMetrics return map of the metrics from cache connection
-func (conn *Enity) GetMetrics(prefix string) map[string]*stats.MetricOptions {
+func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 	_ = conn.Service.GetMetrics(prefix)
 	conn.Metrics[prefix+"_"+conn.name+"_status"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(

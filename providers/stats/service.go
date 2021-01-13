@@ -2,11 +2,11 @@ package stats
 
 type Service struct {
 	// Connection metrics
-	Metrics map[string]*MetricOptions
+	Metrics MapMetricsOptions
 	// Connection alive handlers
-	AliveHandlers map[string]CheckFunc
+	AliveHandlers MapCheckFunc
 	// Connection ready handlers
-	ReadyHandlers map[string]CheckFunc
+	ReadyHandlers MapCheckFunc
 }
 
 // GetAliveHandlers return array of the aliveHandlers from service

@@ -318,7 +318,7 @@ func (conn *Enity) NewMutexByID(lockID interface{}, expire, checkInterval time.D
 }
 
 // GetMetrics return map of the metrics from cache connection
-func (conn *Enity) GetMetrics(prefix string) map[string]*stats.MetricOptions {
+func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 	_ = conn.Service.GetMetrics(prefix)
 	conn.Metrics[prefix+"_"+conn.name+"_status"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
@@ -352,7 +352,7 @@ func (conn *Enity) GetMetrics(prefix string) map[string]*stats.MetricOptions {
 }
 
 // GetReadyHandlers return array of the readyHandlers from database connection
-func (conn *Enity) GetReadyHandlers(prefix string) map[string]stats.CheckFunc {
+func (conn *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
 	_ = conn.Service.GetReadyHandlers(prefix)
 	conn.ReadyHandlers[strings.ToUpper(prefix+"_"+conn.name+"_notfailed")] = func() (bool, string) {
 		if conn.Conn == nil {
