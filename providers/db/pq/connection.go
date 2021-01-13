@@ -2,6 +2,7 @@ package pq
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +230,108 @@ func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 			}
 		},
 	}
+
+	var dbStats sql.DBStats
+	if conn.Conn != nil {
+		dbStats = conn.Conn.DB.Stats()
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_open_connection"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_open_connection",
+				Help: prefix + " " + conn.name + " pq open connection right now",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(float64(dbStats.OpenConnections))
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_max_open_connection"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_max_open_connection",
+				Help: prefix + " " + conn.name + " pq max open connection",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(float64(dbStats.MaxOpenConnections))
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_in_use"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_in_use",
+				Help: prefix + " " + conn.name + " pq connection in use right now",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(float64(dbStats.InUse))
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_wait_duration"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_wait_duration",
+				Help: prefix + " " + conn.name + " pq wait duration",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(0)
+			if conn.Conn != nil {
+				(m.(prometheus.Gauge)).Set(float64(dbStats.WaitDuration))
+			}
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_max_idle_closed"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_max_idle_closed",
+				Help: prefix + " " + conn.name + " pq max idle closed",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(0)
+			if conn.Conn != nil {
+				(m.(prometheus.Gauge)).Set(float64(dbStats.MaxIdleClosed))
+			}
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_max_life_time_closed"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_max_life_time_closed",
+				Help: prefix + " " + conn.name + " pq max life time closed",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(0)
+			if conn.Conn != nil {
+				(m.(prometheus.Gauge)).Set(float64(dbStats.MaxLifetimeClosed))
+			}
+		},
+	}
+
+	// nolint : dupl
+	conn.Metrics[prefix+"_"+conn.name+"_pq_idle"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + conn.name + "_pq_idle",
+				Help: prefix + " " + conn.name + " pq idle",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(0)
+			if conn.Conn != nil {
+				(m.(prometheus.Gauge)).Set(float64(dbStats.Idle))
+			}
+		},
+	}
+
 	return conn.Metrics
 }
 
