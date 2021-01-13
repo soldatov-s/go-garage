@@ -26,7 +26,7 @@ func RegistrateAndInitilize(ctx context.Context, cfg *Config) context.Context {
 func Get(ctx context.Context) *Logger {
 	v := providers.GetByName(ctx, ProvidersName)
 	if v != nil {
-		return providers.GetByName(ctx, ProvidersName).(*Logger)
+		return v.(*Logger)
 	}
 	return nil
 }

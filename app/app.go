@@ -142,7 +142,7 @@ func Shutdown(ctx context.Context) error {
 	provs := providers.Get(ctx)
 	for _, v := range utils.ReverseStringSlice(providersOrder()) {
 		if p, ok := provs.Load(v); ok {
-			if err := p.(baseproviders.IBaseProviders).Start(); err != nil {
+			if err := p.(baseproviders.IBaseProviders).Shutdown(); err != nil {
 				return err
 			}
 		}
