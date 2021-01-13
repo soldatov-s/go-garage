@@ -67,6 +67,7 @@ func (p *Provider) GetEnity(connectionName string) (interface{}, error) {
 
 // RegisterReadyCheck should register a function for /health/ready
 // endpoint.
+// nolint : dupl
 func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
@@ -97,6 +98,7 @@ func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.Che
 
 // RegisterAliveCheck should register a function for /health/alive
 // endpoint.
+// nolint : dupl
 func (p *Provider) RegisterAliveCheck(dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
