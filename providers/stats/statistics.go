@@ -37,11 +37,11 @@ func (mcf MapCheckFunc) RegistrateHandler(prov Provider) error {
 
 type IProviderMetrics interface {
 	// GetMetrics return map of the metrics from provider
-	GetMetrics(prefix string) (MapMetricsOptions, error)
+	GetMetrics(prefix string) MapMetricsOptions
 	// GetAliveHandlers return array of the aliveHandlers from provider
-	GetAliveHandlers(prefix string) (MapCheckFunc, error)
+	GetAliveHandlers(prefix string) MapCheckFunc
 	// GetReadyHandlers return array of the readyHandlers from provider
-	GetReadyHandlers(prefix string) (MapCheckFunc, error)
+	GetReadyHandlers(prefix string) MapCheckFunc
 }
 
 type IProvidersMetrics interface {

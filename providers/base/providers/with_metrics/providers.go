@@ -25,17 +25,9 @@ func (bp *BaseProvidersWithMetrics) GetMetrics(providerName string) (stats.MapMe
 		return nil, err
 	}
 
-	metrics := make(map[string]*stats.MetricOptions)
-
-	providerMetrics, err := prov.(stats.IProviderMetrics).GetMetrics(providerName)
-	if err != nil {
-		return nil, err
-	}
-
-	for k, m := range providerMetrics {
-		metrics[k] = m
-	}
-
+	metrics := make(stats.MapMetricsOptions)
+	providerMetrics := prov.(stats.IProviderMetrics).GetMetrics(providerName)
+	metrics.Fill(providerMetrics)
 	return metrics, nil
 }
 
@@ -46,11 +38,7 @@ func (bp *BaseProvidersWithMetrics) GetAllMetrics(providersName string, out stat
 
 	var err error
 	bp.GetProviders().Range(func(k, v interface{}) bool {
-		providerMetrics, err1 := v.(stats.IProviderMetrics).GetMetrics(k.(string))
-		if err1 != nil {
-			err = err1
-			return false
-		}
+		providerMetrics := v.(stats.IProviderMetrics).GetMetrics(k.(string))
 
 		for k, m := range providerMetrics {
 			metrics[k] = m
@@ -66,21 +54,16 @@ func (bp *BaseProvidersWithMetrics) GetAllMetrics(providersName string, out stat
 
 // GetAliveHandlers get aliveHandlers for provider by providerName
 func (bp *BaseProvidersWithMetrics) GetAliveHandlers(providerName string) (stats.MapCheckFunc, error) {
+	prov, err := bp.GetProvider(providerName)
+	if err != nil {
+		return nil, err
+	}
+
 	handlers := make(stats.MapCheckFunc)
+	providerHandlers := prov.(stats.IProviderMetrics).GetAliveHandlers(providerName)
+	handlers.Fill(providerHandlers)
 
-	var err error
-	bp.GetProviders().Range(func(k, v interface{}) bool {
-		providerAliveHandlers, err1 := v.(stats.IProviderMetrics).GetAliveHandlers(providerName)
-		if err1 != nil {
-			err = err1
-			return false
-		}
-
-		handlers.Fill(providerAliveHandlers)
-		return true
-	})
-
-	return handlers, err
+	return handlers, nil
 }
 
 // GetAllAliveHandlers collect all aliveHandlers for Databases
@@ -90,11 +73,7 @@ func (bp *BaseProvidersWithMetrics) GetAllAliveHandlers(providersName string, ou
 
 	var err error
 	bp.GetProviders().Range(func(k, v interface{}) bool {
-		providerAliveHandlers, err1 := v.(stats.IProviderMetrics).GetAliveHandlers(k.(string))
-		if err1 != nil {
-			err = err1
-			return false
-		}
+		providerAliveHandlers := v.(stats.IProviderMetrics).GetAliveHandlers(k.(string))
 
 		for k, m := range providerAliveHandlers {
 			handlers[k] = m
@@ -111,21 +90,16 @@ func (bp *BaseProvidersWithMetrics) GetAllAliveHandlers(providersName string, ou
 
 // GetReadyHandlers get readyHandlers for provider by providerName
 func (bp *BaseProvidersWithMetrics) GetReadyHandlers(providerName string) (stats.MapCheckFunc, error) {
+	prov, err := bp.GetProvider(providerName)
+	if err != nil {
+		return nil, err
+	}
+
 	handlers := make(stats.MapCheckFunc)
+	providerHandlers := prov.(stats.IProviderMetrics).GetReadyHandlers(providerName)
+	handlers.Fill(providerHandlers)
 
-	var err error
-	bp.GetProviders().Range(func(_, v interface{}) bool {
-		providerReadyHandlers, err1 := v.(stats.IProviderMetrics).GetReadyHandlers(providerName)
-		if err1 != nil {
-			err = err1
-			return false
-		}
-
-		handlers.Fill(providerReadyHandlers)
-		return true
-	})
-
-	return handlers, err
+	return handlers, nil
 }
 
 // GetAllReadyHandlers collect all readyHandlers for Databases
@@ -135,11 +109,7 @@ func (bp *BaseProvidersWithMetrics) GetAllReadyHandlers(providersName string, ou
 
 	var err error
 	bp.GetProviders().Range(func(k, v interface{}) bool {
-		providerReadyHandlers, err1 := v.(stats.IProviderMetrics).GetReadyHandlers(k.(string))
-		if err1 != nil {
-			err = err1
-			return false
-		}
+		providerReadyHandlers := v.(stats.IProviderMetrics).GetReadyHandlers(k.(string))
 
 		for k, m := range providerReadyHandlers {
 			handlers[k] = m
