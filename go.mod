@@ -17,7 +17,7 @@ require (
 	github.com/pressly/goose v2.7.0-rc5+incompatible
 	github.com/prometheus/client_golang v1.7.1
 	github.com/rs/zerolog v1.20.0
-	github.com/soldatov-s/go-swagger v1.0.0
+	github.com/soldatov-s/go-swagger v1.1.0
 	github.com/spf13/cobra v1.0.0
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.6.1
