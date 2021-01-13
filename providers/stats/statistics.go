@@ -46,11 +46,11 @@ type IProviderMetrics interface {
 
 type IProvidersMetrics interface {
 	// GetMetrics return map of the metrics from provider
-	GetMetrics(out MapMetricsOptions) (MapMetricsOptions, error)
+	GetAllMetrics(out MapMetricsOptions) (MapMetricsOptions, error)
 	// GetAliveHandlers return array of the aliveHandlers from provider
 	GetAllAliveHandlers(out MapCheckFunc) (MapCheckFunc, error)
 	// GetReadyHandlers return array of the readyHandlers from provider
-	GetReadyHandlers(out MapCheckFunc) (MapCheckFunc, error)
+	GetAllReadyHandlers(out MapCheckFunc) (MapCheckFunc, error)
 }
 
 func (mcf MapCheckFunc) Fill(src MapCheckFunc) {

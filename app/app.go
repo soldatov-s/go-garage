@@ -45,7 +45,7 @@ func getAllMetrics(ctx context.Context) (stats.MapMetricsOptions, error) {
 	var err error
 	p.Range(func(k, v interface{}) bool {
 		if m, ok := v.(stats.IProvidersMetrics); ok {
-			if _, err = m.GetMetrics(metrics); err != nil {
+			if _, err = m.GetAllMetrics(metrics); err != nil {
 				return false
 			}
 		}
@@ -82,7 +82,7 @@ func getAllReadyHandlers(ctx context.Context) (stats.MapCheckFunc, error) {
 	var err error
 	p.Range(func(k, v interface{}) bool {
 		if m, ok := v.(stats.IProvidersMetrics); ok {
-			if _, err = m.GetReadyHandlers(handlers); err != nil {
+			if _, err = m.GetAllReadyHandlers(handlers); err != nil {
 				return false
 			}
 		}
