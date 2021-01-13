@@ -60,12 +60,12 @@ func NewEnity(ctx context.Context, name string, opts interface{}) (*Enity, error
 
 	conn.options.Validate()
 
-	if conn.options.ConsumerConfig != nil {
-		conn.consumer = NewConsumer(conn.options.ConsumerConfig)
+	if conn.options.Consumer != nil {
+		conn.consumer = NewConsumer(conn.options.Consumer)
 	}
 
-	if conn.options.PublisherConfig != nil {
-		conn.publisher = NewPublisher(conn.options.PublisherConfig)
+	if conn.options.Publisher != nil {
+		conn.publisher = NewPublisher(conn.options.Publisher)
 	}
 
 	conn.name = name

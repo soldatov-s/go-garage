@@ -54,7 +54,7 @@ func HydrationLogger(log *zerolog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			requestID := c.Request().Header.Get("x-request-id")
-			if requestID != "" {
+			if requestID == "" {
 				c.Set(zerologWithReqID, log)
 			} else {
 				l := log.With().Str("x-request-id", requestID).Logger()

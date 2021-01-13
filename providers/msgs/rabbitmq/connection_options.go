@@ -41,8 +41,8 @@ type Config struct {
 	// then try again and if it fails, wait the same amount of time or longer.
 	BackoffPolicy []time.Duration `envconfig:"optional"`
 
-	ConsumerConfig  *ConsumerConfig
-	PublisherConfig *PublisherConfig
+	Consumer  *ConsumerConfig
+	Publisher *PublisherConfig
 }
 
 // Validate checks connection options. If required field is empty - it will

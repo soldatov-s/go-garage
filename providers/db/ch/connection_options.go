@@ -55,8 +55,8 @@ type ConnectionOptions struct {
 	// aliveness and, if it dies, attempt to reestablish connection
 	// will be made. Default timeout is 10 seconds.
 	Timeout time.Duration `envconfig:"optional"`
-	// MigrateOptions struct contains options for migrate
-	MigrateOptions *MigrateOptions
+	// Migrate struct contains options for migrate
+	Migrate *MigrateOptions
 }
 
 // Validate checks connection options. If required field is empty - it will
@@ -90,7 +90,7 @@ func (co *ConnectionOptions) Validate() {
 		co.Timeout = defaultTimeout
 	}
 
-	co.MigrateOptions.Check()
+	co.Migrate.Check()
 }
 
 // GetDBName return database name from DSN

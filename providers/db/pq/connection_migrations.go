@@ -72,7 +72,7 @@ func (conn *Enity) setMigrationFlag() {
 	conn.migrated = true
 	// After successful migration we should not attempt to migrate it
 	// again if connection to database was re-established.
-	conn.options.MigrateConfig.Action = actionNothing
+	conn.options.Migrate.Action = actionNothing
 	conn.migratedMutex.Unlock()
 }
 
@@ -101,32 +101,32 @@ func (conn *Enity) migrate(currentDBVersion int64, log *zerolog.Logger) error {
 	var err error
 
 	switch {
-	case conn.options.MigrateConfig.Action == actionUp && conn.options.MigrateConfig.Count == 0:
+	case conn.options.Migrate.Action == actionUp && conn.options.Migrate.Count == 0:
 		log.Info().Msg("applying all unapplied migrations...")
 
-		err = goose.Up(conn.Conn.DB, conn.options.MigrateConfig.Directory)
-	case conn.options.MigrateConfig.Action == actionUp && conn.options.MigrateConfig.Count != 0:
-		newVersion := currentDBVersion + conn.options.MigrateConfig.Count
+		err = goose.Up(conn.Conn.DB, conn.options.Migrate.Directory)
+	case conn.options.Migrate.Action == actionUp && conn.options.Migrate.Count != 0:
+		newVersion := currentDBVersion + conn.options.Migrate.Count
 
 		log.Info().Int64("new version", newVersion).Msg("migrating database to specific version")
 
-		err = goose.UpTo(conn.Conn.DB, conn.options.MigrateConfig.Directory, newVersion)
-	case conn.options.MigrateConfig.Action == actionDown && conn.options.MigrateConfig.Count == 0:
+		err = goose.UpTo(conn.Conn.DB, conn.options.Migrate.Directory, newVersion)
+	case conn.options.Migrate.Action == actionDown && conn.options.Migrate.Count == 0:
 		log.Info().Msg("downgrading database to zero state, you'll need to re-apply migrations!")
 
-		err = goose.DownTo(conn.Conn.DB, conn.options.MigrateConfig.Directory, 0)
+		err = goose.DownTo(conn.Conn.DB, conn.options.Migrate.Directory, 0)
 
 		log.Fatal().Msg("database downgraded to zero state, you have to re-apply migrations")
-	case conn.options.MigrateConfig.Action == actionDown && conn.options.MigrateConfig.Count != 0:
-		newVersion := currentDBVersion - conn.options.MigrateConfig.Count
+	case conn.options.Migrate.Action == actionDown && conn.options.Migrate.Count != 0:
+		newVersion := currentDBVersion - conn.options.Migrate.Count
 
 		log.Info().Int64("new version", newVersion).Msg("downgrading database to specific version")
 
-		err = goose.DownTo(conn.Conn.DB, conn.options.MigrateConfig.Directory, newVersion)
+		err = goose.DownTo(conn.Conn.DB, conn.options.Migrate.Directory, newVersion)
 	default:
 		log.Fatal().
-			Str("action", conn.options.MigrateConfig.Action).
-			Int64("count", conn.options.MigrateConfig.Count).
+			Str("action", conn.options.Migrate.Action).
+			Int64("count", conn.options.Migrate.Count).
 			Msg("unsupported set of migration parameters, cannot continue")
 	}
 
@@ -175,7 +175,7 @@ func (conn *Enity) Migrate() {
 	conn.setMigrationFlag()
 
 	// Figure out was migrate-only mode requested?
-	if conn.options.MigrateConfig.Only {
+	if conn.options.Migrate.Only {
 		migrationsLog.Warn().Msg("only database migrations was requested, shutting down")
 		os.Exit(0)
 	}
