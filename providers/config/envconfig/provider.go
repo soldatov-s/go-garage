@@ -8,9 +8,7 @@ const DefaultProviderName = "envconfig"
 
 // Provider is a control structure that provides envconfig functionality
 // to gowork.
-type Provider struct {
-	Cfg interface{}
-}
+type Provider struct{}
 
 func NewProvider() *Provider {
 	return &Provider{}
