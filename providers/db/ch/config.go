@@ -19,9 +19,9 @@ const (
 	defaultMaxConnLifetime      = time.Second * 10
 )
 
-// ConnectionOptions represents configuration structure for every
+// Config represents configuration structure for every
 // connection.
-type ConnectionOptions struct {
+type Config struct {
 	// DSN is a connection string in form of DSN. Example:
 	// tcp://host:port.
 	// Default: "tcp://127.0.0.1:9000"
@@ -56,45 +56,60 @@ type ConnectionOptions struct {
 	// will be made. Default timeout is 10 seconds.
 	Timeout time.Duration `envconfig:"optional"`
 	// Migrate struct contains options for migrate
-	Migrate *MigrateOptions
+	Migrate *MigrateConfig
 }
 
-// Validate checks connection options. If required field is empty - it will
+// SetDefault checks connection config. If required field is empty - it will
 // be filled with some default value.
-func (co *ConnectionOptions) Validate() {
-	if co.DSN == "" {
-		co.DSN = defaultDSN
+// Returns a copy of config.
+func (c *Config) SetDefault() *Config {
+	cfgCopy := *c
+
+	if c.DSN == "" {
+		c.DSN = defaultDSN
 	}
 
-	if co.MaxConnectionLifetime == 0 {
-		co.MaxConnectionLifetime = defaultMaxConnLifetime
+	if c.MaxConnectionLifetime == 0 {
+		c.MaxConnectionLifetime = defaultMaxConnLifetime
 	}
 
-	if co.MaxIdleConnections == 0 {
-		co.MaxIdleConnections = defaultMaxIdleConnections
+	if c.MaxIdleConnections == 0 {
+		c.MaxIdleConnections = defaultMaxIdleConnections
 	}
 
-	if co.MaxOpenedConnections == 0 {
-		co.MaxOpenedConnections = defaultMaxOpenedConnections
+	if c.MaxOpenedConnections == 0 {
+		c.MaxOpenedConnections = defaultMaxOpenedConnections
 	}
 
-	if co.Options == "" {
-		co.Options = defaultOptions
+	if c.Options == "" {
+		c.Options = defaultOptions
 	}
 
-	if co.QueueWorkerTimeout == 0 {
-		co.QueueWorkerTimeout = defaultQueueWorkerTimeout
+	if c.QueueWorkerTimeout == 0 {
+		c.QueueWorkerTimeout = defaultQueueWorkerTimeout
 	}
 
-	if co.Timeout == 0 {
-		co.Timeout = defaultTimeout
+	if c.Timeout == 0 {
+		c.Timeout = defaultTimeout
 	}
 
-	co.Migrate.Check()
+	cfgCopy.Migrate = c.Migrate.SetDefault()
+	return &cfgCopy
+}
+
+// ComposeDSN compose DSN
+func (c *Config) ComposeDSN() string {
+	// Compose DSN.
+	dsn := c.DSN
+	if c.Options != "" {
+		dsn += "?" + c.Options
+	}
+
+	return dsn
 }
 
 // GetDBName return database name from DSN
-func (co *ConnectionOptions) GetDBName() string {
-	elements := strings.Split(co.DSN, "/")
+func (c *Config) GetDBName() string {
+	elements := strings.Split(c.DSN, "/")
 	return elements[len(elements)-1]
 }

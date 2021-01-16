@@ -21,134 +21,124 @@ import (
 // connection, asynchronous queue and everything that related to
 // specified connection.
 type Enity struct {
-	ctx     context.Context
-	log     zerolog.Logger
-	name    string
-	options *ConnectionOptions
-
+	// Metrics
+	stats.Service
+	// DB connection
 	Conn *sqlx.DB
 
-	// Name of schema in database
-	dbName string
-
+	ctx           context.Context
+	log           zerolog.Logger
+	name          string
+	cfg           *Config
 	migratedMutex sync.Mutex
 
-	queue      []*QueueItem
-	queueMutex *sync.Mutex
-
+	// Queue for bulk operations
+	queue              []*QueueItem
+	queueMutex         *sync.Mutex
+	queueWorkerStopped bool
 	// Shutdown flags.
 	weAreShuttingDown  bool
 	connWatcherStopped bool
-	queueWorkerStopped bool
-
-	// Moved here for memory's sake. Guarded by mutex above.
+	// Migration flag
 	migrated bool
-
-	// Metrics
-	stats.Service
 }
 
 // NewEnity create new enity.
-func NewEnity(ctx context.Context, name string, opts interface{}) (*Enity, error) {
+func NewEnity(ctx context.Context, name string, cfg interface{}) (*Enity, error) {
 	if name == "" {
 		return nil, errors.ErrEmptyEnityName
 	}
 
+	// Checking that passed config is OUR.
+	if _, ok := cfg.(*Config); !ok {
+		return nil, db.ErrNotConfigPointer(Config{})
+	}
+
 	conn := &Enity{
-		name: name,
-		ctx:  logger.Registrate(ctx),
+		name:               name,
+		ctx:                logger.Registrate(ctx),
+		log:                logger.Get(ctx).GetLogger(db.ProvidersName, nil).With().Str("connection", name).Logger(),
+		cfg:                cfg.(*Config).SetDefault(),
+		connWatcherStopped: true,
+		queueWorkerStopped: true,
 	}
 
-	logger.Get(conn.ctx).GetLogger(db.ProvidersName, nil).Info().Msgf("initializing enity " + name + "...")
-	conn.log = logger.Get(conn.ctx).GetLogger(db.ProvidersName, nil).With().Str("connection", name).Logger()
-
-	// We should not attempt to establish connection if passed options
-	// isn't OUR options.
-	var ok bool
-	conn.options, ok = opts.(*ConnectionOptions)
-	if !ok {
-		return nil, db.ErrNotConfigPointer(ConnectionOptions{})
-	}
-
-	conn.options.Validate()
-
-	conn.name = name
-	// Default db is "default"
-	conn.SetDatabaseName("default")
-
-	conn.connWatcherStopped = true
-	conn.queueWorkerStopped = true
+	conn.log.Info().Msgf("initializing enity " + name + "...")
 
 	return conn, nil
 }
 
 // Shutdown shutdowns queue worker and connection watcher. Later will also
 // close connection to database. This is a blocking call.
-func (conn *Enity) Shutdown() error {
-	conn.log.Info().Msg("Shutting down database connection watcher and queue worker")
-	conn.weAreShuttingDown = true
+func (c *Enity) Shutdown() error {
+	c.log.Info().Msg("shutting down database connection watcher and queue worker")
+	c.weAreShuttingDown = true
 
-	for {
-		if conn.queueWorkerStopped && conn.connWatcherStopped {
-			break
+	if c.cfg.StartWatcher {
+		for {
+			if c.queueWorkerStopped && c.connWatcherStopped {
+				break
+			}
+			time.Sleep(time.Millisecond * 500)
 		}
-
-		time.Sleep(time.Millisecond * 500)
+	} else {
+		c.shutdown()
 	}
-	conn.log.Info().Msg("Connection shutted down")
+
+	c.log.Info().Msg("connection shutted down")
 
 	return nil
 }
 
 // SetConnPoolLifetime sets connection lifetime.
-func (conn *Enity) SetConnPoolLifetime(connMaxLifetime time.Duration) {
+func (c *Enity) SetConnPoolLifetime(connMaxLifetime time.Duration) {
 	// First - set passed data in connection options.
-	conn.options.MaxConnectionLifetime = connMaxLifetime
+	c.cfg.MaxConnectionLifetime = connMaxLifetime
 
 	// If connection already established - tweak it.
-	if conn.Conn != nil {
-		conn.Conn.SetConnMaxLifetime(connMaxLifetime)
+	if c.Conn != nil {
+		c.Conn.SetConnMaxLifetime(connMaxLifetime)
 	}
 }
 
 // SetConnPoolLimits sets pool limits for connections counts.
-func (conn *Enity) SetConnPoolLimits(maxIdleConnections, maxOpenedConnections int) {
+func (c *Enity) SetConnPoolLimits(maxIdleConnections, maxOpenedConnections int) {
 	// First - set passed data in connection options.
-	conn.options.MaxIdleConnections = maxIdleConnections
-	conn.options.MaxOpenedConnections = maxOpenedConnections
+	c.cfg.MaxIdleConnections = maxIdleConnections
+	c.cfg.MaxOpenedConnections = maxOpenedConnections
 
 	// If connection already established - tweak it.
-	if conn.Conn != nil {
-		conn.Conn.SetMaxIdleConns(maxIdleConnections)
-		conn.Conn.SetMaxOpenConns(maxOpenedConnections)
+	if c.Conn != nil {
+		c.Conn.SetMaxIdleConns(maxIdleConnections)
+		c.Conn.SetMaxOpenConns(maxOpenedConnections)
 	}
 }
 
 // SetPoolLimits sets connection pool limits.
-func (conn *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration) {
-	conn.SetConnPoolLimits(maxIdleConnections, maxOpenedConnections)
-	conn.SetConnPoolLifetime(connMaxLifetime)
+func (c *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration) {
+	c.SetConnPoolLimits(maxIdleConnections, maxOpenedConnections)
+	c.SetConnPoolLifetime(connMaxLifetime)
 }
 
 // Start starts connection workers and connection procedure itself.
-func (conn *Enity) Start() error {
+func (c *Enity) Start() error {
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
-	if conn.connWatcherStopped {
-		if conn.options.StartWatcher {
-			conn.connWatcherStopped = false
-			go conn.startWatcher()
+	if c.connWatcherStopped {
+		if c.cfg.StartWatcher {
+			c.connWatcherStopped = false
+			go c.startWatcher()
 		} else {
 			// Manually start the connection once to establish connection
-			_ = conn.watcher()
+			_ = c.watcher()
 		}
 	}
 
 	// Queue worker will be started only if needed. If it won't be
 	// started then queueWorkerStopped flag forced to true.
-	if conn.options.StartQueueWorker && conn.queueWorkerStopped {
-		conn.queueWorkerStopped = false
-		go conn.startQueueWorker()
+	if c.cfg.StartQueueWorker && c.queueWorkerStopped {
+		c.queueWorkerStopped = false
+		go c.startQueueWorker()
 	}
 
 	return nil
@@ -157,52 +147,33 @@ func (conn *Enity) Start() error {
 // WaitForEstablishing will block execution until connection will be
 // successfully established and database migrations will be applied
 // (or rolled back).
-func (conn *Enity) WaitForEstablishing() {
+func (c *Enity) WaitForEstablishing() {
 	for {
-		conn.migratedMutex.Lock()
-		migrated := conn.migrated
-		conn.migratedMutex.Unlock()
+		c.migratedMutex.Lock()
+		migrated := c.migrated
+		c.migratedMutex.Unlock()
 
-		if conn.Conn != nil && migrated {
+		if c.Conn != nil && migrated {
 			break
 		}
 
-		conn.log.Debug().Msg("Connection isn't ready - not yet established or database migration in progress")
+		c.log.Debug().Msg("connection isn't ready")
 		time.Sleep(time.Millisecond * 100)
 	}
 }
 
-// GetMetrics return map of the metrics from database connection
-func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
-	_ = conn.Service.GetMetrics(prefix)
-	conn.Metrics[prefix+"_"+conn.name+"_status"] = &stats.MetricOptions{
-		Metric: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_status",
-				Help: prefix + " " + conn.name + " status link to " + utils.RedactedDSN(conn.options.DSN),
-			}),
-		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				err := conn.Conn.Ping()
-				if err == nil {
-					(m.(prometheus.Gauge)).Set(1)
-				}
-			}
-		},
-	}
-
+func (c *Enity) getDBStats(prefix string) {
 	var dbStats sql.DBStats
-	if conn.Conn != nil {
-		dbStats = conn.Conn.DB.Stats()
+	if c.Conn != nil {
+		dbStats = c.Conn.DB.Stats()
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_open_connection"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_open_connection"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_open_connection",
-				Help: prefix + " " + conn.name + " ch open connection right now",
+				Name: prefix + "_" + c.name + "_ch_open_connection",
+				Help: prefix + " " + c.name + " ch open connection right now",
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(float64(dbStats.OpenConnections))
@@ -210,11 +181,11 @@ func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_max_open_connection"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_max_open_connection"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_max_open_connection",
-				Help: prefix + " " + conn.name + " ch max open connection",
+				Name: prefix + "_" + c.name + "_ch_max_open_connection",
+				Help: prefix + " " + c.name + " ch max open connection",
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(float64(dbStats.MaxOpenConnections))
@@ -222,11 +193,11 @@ func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_in_use"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_in_use"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_in_use",
-				Help: prefix + " " + conn.name + " ch connection in use right now",
+				Name: prefix + "_" + c.name + "_ch_in_use",
+				Help: prefix + " " + c.name + " ch connection in use right now",
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(float64(dbStats.InUse))
@@ -234,81 +205,92 @@ func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_wait_duration"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_wait_duration"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_wait_duration",
-				Help: prefix + " " + conn.name + " ch wait duration",
+				Name: prefix + "_" + c.name + "_ch_wait_duration",
+				Help: prefix + " " + c.name + " ch wait duration",
 			}),
 		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				(m.(prometheus.Gauge)).Set(float64(dbStats.WaitDuration))
-			}
+			(m.(prometheus.Gauge)).Set(float64(dbStats.WaitDuration))
 		},
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_max_idle_closed"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_max_idle_closed"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_max_idle_closed",
-				Help: prefix + " " + conn.name + " ch max idle closed",
+				Name: prefix + "_" + c.name + "_ch_max_idle_closed",
+				Help: prefix + " " + c.name + " ch max idle closed",
 			}),
 		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				(m.(prometheus.Gauge)).Set(float64(dbStats.MaxIdleClosed))
-			}
+			(m.(prometheus.Gauge)).Set(float64(dbStats.MaxIdleClosed))
 		},
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_max_life_time_closed"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_max_life_time_closed"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_max_life_time_closed",
-				Help: prefix + " " + conn.name + " ch max life time closed",
+				Name: prefix + "_" + c.name + "_ch_max_life_time_closed",
+				Help: prefix + " " + c.name + " ch max life time closed",
 			}),
 		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				(m.(prometheus.Gauge)).Set(float64(dbStats.MaxLifetimeClosed))
-			}
+			(m.(prometheus.Gauge)).Set(float64(dbStats.MaxLifetimeClosed))
 		},
 	}
 
 	// nolint : dupl
-	conn.Metrics[prefix+"_"+conn.name+"_ch_idle"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_ch_idle"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_ch_idle",
-				Help: prefix + " " + conn.name + " ch idle",
+				Name: prefix + "_" + c.name + "_ch_idle",
+				Help: prefix + " " + c.name + " ch idle",
+			}),
+		MetricFunc: func(m interface{}) {
+			(m.(prometheus.Gauge)).Set(float64(dbStats.Idle))
+		},
+	}
+}
+
+// GetMetrics return map of the metrics from database connection
+func (c *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
+	_ = c.Service.GetMetrics(prefix)
+	c.Metrics[prefix+"_"+c.name+"_status"] = &stats.MetricOptions{
+		Metric: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: prefix + "_" + c.name + "_status",
+				Help: prefix + " " + c.name + " status link to " + utils.RedactedDSN(c.cfg.DSN),
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				(m.(prometheus.Gauge)).Set(float64(dbStats.Idle))
+			if c.Conn != nil {
+				err := c.ping()
+				if err == nil {
+					(m.(prometheus.Gauge)).Set(1)
+				}
 			}
 		},
 	}
 
-	return conn.Metrics
+	c.getDBStats(prefix)
+
+	return c.Metrics
 }
 
 // GetReadyHandlers return array of the readyHandlers from database connection
-func (conn *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
-	_ = conn.Service.GetReadyHandlers(prefix)
-	conn.ReadyHandlers[strings.ToUpper(prefix+"_"+conn.name+"_notfailed")] = func() (bool, string) {
-		if conn.Conn == nil {
+func (c *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
+	_ = c.Service.GetReadyHandlers(prefix)
+	c.ReadyHandlers[strings.ToUpper(prefix+"_"+c.name+"_notfailed")] = func() (bool, string) {
+		if c.Conn == nil {
 			return false, "Not connected"
 		}
 
-		if err := conn.Conn.Ping(); err != nil {
+		if err := c.ping(); err != nil {
 			return false, err.Error()
 		}
 
 		return true, ""
 	}
-	return conn.ReadyHandlers
+	return c.ReadyHandlers
 }
