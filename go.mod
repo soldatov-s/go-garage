@@ -22,4 +22,5 @@ require (
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.6.1
 	github.com/vrischmann/envconfig v1.2.0
+	go.mongodb.org/mongo-driver v1.4.4
 )
