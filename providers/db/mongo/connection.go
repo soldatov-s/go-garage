@@ -1,7 +1,11 @@
 package mongo
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"io"
+	"mime/multipart"
 	"strings"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 )
 
 // Enity is a connection controlling structure. It controls
@@ -149,4 +154,88 @@ func (c *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
 		return true, ""
 	}
 	return c.ReadyHandlers
+}
+
+func writeToGridFile(fileName string, file multipart.File, gridFile *gridfs.UploadStream) (int, error) {
+	reader := bufio.NewReader(file)
+	defer func() { file.Close() }()
+	// make a buffer to keep chunks that are read
+	buf := make([]byte, 1024)
+	fileSize := 0
+	for {
+		// read a chunk
+		n, err := reader.Read(buf)
+		if err != nil && err != io.EOF {
+			return 0, ErrFailedReadInputFile
+		}
+		if n == 0 {
+			break
+		}
+		// write a chunk
+		size, err := gridFile.Write(buf[:n])
+		if err != nil {
+			return 0, ErrWriteFileToDatabase(fileName)
+		}
+		fileSize += size
+	}
+	gridFile.Close()
+	return fileSize, nil
+}
+
+func (c *Enity) WriteMultipart(databasename, fileprefix string, multipartForm *multipart.Form) error {
+	for _, fileHeaders := range multipartForm.File {
+		for _, fileHeader := range fileHeaders {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return err
+			}
+
+			bucket, err := gridfs.NewBucket(c.Conn.Database(databasename))
+			if err != nil {
+				return err
+			}
+
+			// this is the name of the file which will be saved in the database
+			filename := fileHeader.Filename
+			if fileprefix != "" {
+				filename = fileprefix + "_" + filename
+			}
+
+			gridFile, err := bucket.OpenUploadStream(filename)
+			if err != nil {
+				return err
+			}
+
+			fileSize, err := writeToGridFile(fileHeader.Filename, file, gridFile)
+			if err != nil {
+				return err
+			}
+
+			c.log.Debug().Msgf("write file to DB was successful; file size: %d \n", fileSize)
+		}
+	}
+
+	return nil
+}
+
+func (c *Enity) GetFile(databasename, fileName, fileprefix string) (*bytes.Buffer, int64, error) {
+	bucket, err := gridfs.NewBucket(c.Conn.Database(databasename))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var buf bytes.Buffer
+	// this is the name of the file which will be saved in the database
+	filename := fileName
+	if fileprefix != "" {
+		filename = fileprefix + "_" + filename
+	}
+
+	dStream, err := bucket.DownloadToStreamByName(filename, &buf)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	c.log.Debug().Msgf("file size to download: %v\n", dStream)
+	return &buf, dStream, nil
 }
