@@ -9,7 +9,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/errors"
 )
 
-const DefaultProviderName = "pq"
+const defaultProviderName = "pq"
 
 // Provider provides PostgreSQL database worker. This provider
 // supports asynchronous database actions (like bulk inserting). Every
@@ -23,7 +23,7 @@ type Provider struct {
 // queue processor should also be started here.
 func NewProvider(ctx context.Context) *Provider {
 	return &Provider{
-		Provider: providerwithmetrics.NewProvider(ctx, db.ProvidersName, DefaultProviderName),
+		Provider: providerwithmetrics.NewProvider(ctx, db.ProvidersName, defaultProviderName),
 	}
 }
 
@@ -117,51 +117,22 @@ func (p *Provider) WaitForFlush(connectionName string) error {
 	item := &QueueItem{IsWaitForFlush: true, WaitForFlush: waitChan}
 	conn.AppendToQueue(item)
 	<-waitChan
-	p.Log.Debug().Msg("Data flushed to database")
+	p.Log.Debug().Msg("data flushed to database")
 
 	return nil
 }
 
 // NewMutex creates new distributed mutex
-func (p *Provider) NewMutex(connectionName string, checkInterval time.Duration, mutex interface{}) error {
-	return p.NewMutexByID(
-		connectionName,
-		defaultLockID,
-		checkInterval,
-		mutex,
-	)
+func (p *Provider) NewMutex(connectionName string, checkInterval time.Duration) (*Mutex, error) {
+	return p.NewMutexByID(connectionName, defaultLockID, checkInterval)
 }
 
 // NewMutexByID creates new distributed postgresql mutex by ID
-func (p *Provider) NewMutexByID(
-	connectionName string,
-	lockID interface{},
-	checkInterval time.Duration,
-	mutex interface{}) error {
-	var conn *Enity
-
+func (p *Provider) NewMutexByID(connectionName string, lockID int64, checkInterval time.Duration) (*Mutex, error) {
 	conn, err := p.getEnity(connectionName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if mutex != nil {
-		mutexPointer, ok := mutex.(**Mutex)
-		if !ok {
-			return db.ErrNotMutexPointer(Mutex{})
-		}
-
-		p.Log.Debug().Msg("Copying pointer to real mutex")
-
-		var err1 error
-
-		*mutexPointer, err1 = conn.NewMutexByID(lockID, checkInterval)
-		if err1 != nil {
-			return err1
-		}
-
-		return nil
-	}
-
-	return db.ErrMutexPointerIsNil
+	return conn.NewMutexByID(lockID, checkInterval)
 }

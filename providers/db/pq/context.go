@@ -14,12 +14,12 @@ func Registrate(ctx context.Context) (context.Context, error) {
 		return nil, db.ErrEmptyDatabases
 	}
 
-	if _, err := d.GetProvider(DefaultProviderName); err == nil {
+	if _, err := d.GetProvider(defaultProviderName); err == nil {
 		return ctx, nil
 	} else if err != errors.ErrProviderNotRegistered {
 		return nil, err
 	}
-	return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
+	return ctx, d.RegisterProvider(defaultProviderName, NewProvider(ctx))
 }
 
 func Get(ctx context.Context) (db.Provider, error) {
@@ -28,7 +28,7 @@ func Get(ctx context.Context) (db.Provider, error) {
 		return nil, db.ErrEmptyDatabases
 	}
 
-	return d.GetProvider(DefaultProviderName)
+	return d.GetProvider(defaultProviderName)
 }
 
 func RegistrateEnity(ctx context.Context, enityName string, options interface{}) (context.Context, error) {

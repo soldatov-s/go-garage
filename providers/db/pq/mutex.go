@@ -25,7 +25,7 @@ const (
 // Mutex provides a distributed mutex across multiple instances via PostgreSQL database
 type Mutex struct {
 	// Connection to database
-	conn **sqlx.DB
+	conn *sqlx.DB
 	// Mutex ID
 	lockID int64
 	// Inteval between checking mutex state
@@ -37,17 +37,12 @@ type Mutex struct {
 }
 
 // NewMutex creates new distributed postgresql mutex
-func NewMutex(conn **sqlx.DB, checkInterval time.Duration) (*Mutex, error) {
+func NewMutex(conn *sqlx.DB, checkInterval time.Duration) (*Mutex, error) {
 	return NewMutexByID(conn, defaultLockID, checkInterval)
 }
 
 // NewMutexByID creates new distributed postgresql mutex by ID
-func NewMutexByID(conn **sqlx.DB, lockID interface{}, checkInterval time.Duration) (*Mutex, error) {
-	id, ok := lockID.(int64)
-	if !ok {
-		return nil, db.ErrNotLockIDPointer
-	}
-
+func NewMutexByID(conn *sqlx.DB, lockID int64, checkInterval time.Duration) (*Mutex, error) {
 	checkIntervalValue := checkInterval
 	if checkIntervalValue == 0 {
 		checkIntervalValue = defaultCheckInterval
@@ -55,116 +50,114 @@ func NewMutexByID(conn **sqlx.DB, lockID interface{}, checkInterval time.Duratio
 
 	return &Mutex{
 		conn:          conn,
-		lockID:        id,
+		lockID:        lockID,
 		checkInterval: checkIntervalValue,
 		locked:        false,
 	}, nil
 }
 
 // GenerateLockID generate LockID by database name and other artifacts
-func (psqlLock *Mutex) GenerateLockID(databaseName string, additionalNames ...string) {
+func (m *Mutex) GenerateLockID(databaseName string, additionalNames ...string) {
 	if len(additionalNames) > 0 {
 		databaseName = strings.Join(append(additionalNames, databaseName), "\x00")
 	}
 
 	sum := crc32.ChecksumIEEE([]byte(databaseName))
-	psqlLock.lockID = int64(sum * uint32(lockIDSalt))
+	m.lockID = int64(sum * uint32(lockIDSalt))
 }
 
 // Lock sets lock item for database (PostgreSQL) locking. It is
 // blocking call which will wait until database lock key will be deleted,
 // pretty much like simple mutex.
-func (psqlLock *Mutex) Lock() (err error) {
-	psqlLock.mu.Lock()
-	return psqlLock.commonLock(requestLock)
+func (m *Mutex) Lock() (err error) {
+	m.mu.Lock()
+	return m.commonLock(requestLock)
 }
 
 // Unlock deletes lock item for database (PostgreSQL) locking.
-func (psqlLock *Mutex) Unlock() (err error) {
-	psqlLock.mu.Unlock()
-	return psqlLock.commonUnlock(requestUnlock)
+func (m *Mutex) Unlock() (err error) {
+	m.mu.Unlock()
+	return m.commonUnlock(requestUnlock)
 }
 
 // RWLock sets rwlock item for database (PostgreSQL) locking. It is
 // blocking call which will wait until database lock key will be deleted,
 // pretty much like simple mutex.
-func (psqlLock *Mutex) RWLock() (err error) {
-	psqlLock.mu.RLock()
-	return psqlLock.commonLock(requestSharedLock)
+func (m *Mutex) RWLock() (err error) {
+	m.mu.RLock()
+	return m.commonLock(requestSharedLock)
 }
 
 // RWUnlock deletes rwlock item for database (PostgreSQL) locking.
-func (psqlLock *Mutex) RWUnlock() (err error) {
-	psqlLock.mu.RUnlock()
-	return psqlLock.commonUnlock(requestSharedUnlock)
+func (m *Mutex) RWUnlock() (err error) {
+	m.mu.RUnlock()
+	return m.commonUnlock(requestSharedUnlock)
 }
 
 // checkDBConn check that connection not nil and active
-func (psqlLock *Mutex) checkDBConn() (conn *sqlx.DB, err error) {
-	conn = *psqlLock.conn
-
-	if conn == nil {
-		return nil, db.ErrDBConnNotEstablished
+func (m *Mutex) checkDBConn() error {
+	if m.conn == nil {
+		return db.ErrDBConnNotEstablished
 	}
 
-	if conn.Ping() != nil {
-		return nil, db.ErrDBConnNotEstablished
+	if m.conn.Ping() != nil {
+		return db.ErrDBConnNotEstablished
 	}
 
-	return conn, nil
+	return nil
 }
 
-func (psqlLock *Mutex) commonLock(request string) (err error) {
+func (m *Mutex) commonLock(request string) (err error) {
 	var result bool
 
-	conn, err := psqlLock.checkDBConn()
+	err = m.checkDBConn()
 	if err != nil {
 		return err
 	}
 
-	err = conn.Get(&result, request, psqlLock.lockID)
+	err = m.conn.Get(&result, request, m.lockID)
 	if err != nil {
 		return err
 	}
 
-	psqlLock.locked = true
+	m.locked = true
 
 	if !result {
 		for {
-			conn, err := psqlLock.checkDBConn()
+			err := m.checkDBConn()
 			if err != nil {
 				return err
 			}
 
-			err = conn.Get(&result, request, psqlLock.lockID)
+			err = m.conn.Get(&result, request, m.lockID)
 			if err != nil {
 				return err
 			}
 
-			if result || !psqlLock.locked {
+			if result || !m.locked {
 				return nil
 			}
 
-			time.Sleep(psqlLock.checkInterval)
+			time.Sleep(m.checkInterval)
 		}
 	}
 
 	return nil
 }
 
-func (psqlLock *Mutex) commonUnlock(request string) (err error) {
-	if psqlLock.locked {
-		conn, err := psqlLock.checkDBConn()
+func (m *Mutex) commonUnlock(request string) (err error) {
+	if m.locked {
+		err := m.checkDBConn()
 		if err != nil {
 			return err
 		}
 
-		_, err = conn.Exec(request, psqlLock.lockID)
+		_, err = m.conn.Exec(request, m.lockID)
 		if err != nil {
 			return err
 		}
 
-		psqlLock.locked = false
+		m.locked = false
 	}
 
 	return nil

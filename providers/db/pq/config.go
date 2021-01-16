@@ -59,42 +59,57 @@ type Config struct {
 	Migrate *MigrateConfig
 }
 
-// Validate checks connection options. If required field is empty - it will
+// SetDefault checks connection config. If required field is empty - it will
 // be filled with some default value.
-func (co *Config) Validate() {
-	if co.DSN == "" {
-		co.DSN = defaultDSN
+// Returns a copy of config.
+func (c *Config) SetDefault() *Config {
+	cfgCopy := *c
+
+	if cfgCopy.DSN == "" {
+		cfgCopy.DSN = defaultDSN
 	}
 
-	if co.MaxConnectionLifetime == 0 {
-		co.MaxConnectionLifetime = defaultMaxConnLifetime
+	if cfgCopy.MaxConnectionLifetime == 0 {
+		cfgCopy.MaxConnectionLifetime = defaultMaxConnLifetime
 	}
 
-	if co.MaxIdleConnections == 0 {
-		co.MaxIdleConnections = defaultMaxIdleConnections
+	if cfgCopy.MaxIdleConnections == 0 {
+		cfgCopy.MaxIdleConnections = defaultMaxIdleConnections
 	}
 
-	if co.MaxOpenedConnections == 0 {
-		co.MaxOpenedConnections = defaultMaxOpenedConnections
+	if cfgCopy.MaxOpenedConnections == 0 {
+		cfgCopy.MaxOpenedConnections = defaultMaxOpenedConnections
 	}
 
-	if co.Options == "" {
-		co.Options = defaultOptions
+	if cfgCopy.Options == "" {
+		cfgCopy.Options = defaultOptions
 	}
 
-	if co.QueueWorkerTimeout == 0 {
-		co.QueueWorkerTimeout = defaultQueueWorkerTimeout
+	if cfgCopy.QueueWorkerTimeout == 0 {
+		cfgCopy.QueueWorkerTimeout = defaultQueueWorkerTimeout
 	}
 
-	if co.Timeout == 0 {
-		co.Timeout = defaultTimeout
+	if cfgCopy.Timeout == 0 {
+		cfgCopy.Timeout = defaultTimeout
 	}
 
-	co.Migrate.Validate()
+	cfgCopy.Migrate = c.Migrate.SetDefault()
+	return &cfgCopy
+}
+
+// ComposeDSN compose DSN
+func (c *Config) ComposeDSN() string {
+	// Compose DSN.
+	dsn := c.DSN
+	if c.Options != "" {
+		dsn += "?" + c.Options
+	}
+
+	return dsn
 }
 
 // GetDBName return database name from DSN
-func (co *Config) GetDBName() string {
-	elements := strings.Split(co.DSN, "/")
+func (c *Config) GetDBName() string {
+	elements := strings.Split(c.DSN, "/")
 	return elements[len(elements)-1]
 }

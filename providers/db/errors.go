@@ -16,7 +16,7 @@ var (
 	ErrDBConnNotEstablished    = errors.New("database connection not established")
 )
 
-func ErrInvalidConnectionOptionsPointer(iface interface{}) error {
+func ErrNotConfigPointer(iface interface{}) error {
 	return errors.New("passed configuration is not *" +
 		goworkerr.ObjName(iface))
 }
