@@ -19,7 +19,9 @@ type Provider interface {
 	provider.IProvider
 	provider.IEnityManager
 	stats.IProviderMetrics
+}
 
+type Bulker interface {
 	// AppendToQueue should add passed item into processing queue, if provider
 	// able to be asynchronous (e.g. for batching database inserts or updates,
 	// aka transactions). It's up to provider to cast passed item into
@@ -27,13 +29,16 @@ type Provider interface {
 	// wrong, e.g. if AddToQueue() used on provider that doesn't support
 	// transactions or queues.
 	AppendToQueue(connectionName string, item interface{}) error
+	// WaitForFlush blocks execution until queue will be empty.
+	WaitForFlush(connectionName string) error
+}
+
+type Migrator interface {
 	// RegisterMigration registers migration for specified connection.
 	// It is up to provider to provide instructions about working with
 	// migrations and how to put them into migration interface. It is
 	// recommended to use separate structure.
 	RegisterMigration(connectionName string, migration interface{}) error
-	// WaitForFlush blocks execution until queue will be empty.
-	WaitForFlush(connectionName string) error
 }
 
 // Databases is a controlling structure for all databases and providers.
@@ -56,7 +61,11 @@ func (d *Databases) AppendToQueue(providerName, connectionName string, queueItem
 		return err
 	}
 
-	return prov.AppendToQueue(connectionName, queueItem)
+	if _, ok := prov.(Bulker); !ok {
+		return ErrNotBulker(prov)
+	}
+
+	return prov.(Bulker).AppendToQueue(connectionName, queueItem)
 }
 
 // GetProvider returns requested database provider.
@@ -79,7 +88,11 @@ func (d *Databases) RegisterMigration(providerName, connectionName string, migra
 		return err
 	}
 
-	return prov.RegisterMigration(connectionName, migration)
+	if _, ok := prov.(Migrator); !ok {
+		return ErrNotMigrator(prov)
+	}
+
+	return prov.(Migrator).RegisterMigration(connectionName, migration)
 }
 
 // WaitForFlush block execution until underlying provider will flush
@@ -91,7 +104,11 @@ func (d *Databases) WaitForFlush(providerName, connectionName string) error {
 		return err
 	}
 
-	return prov.WaitForFlush(connectionName)
+	if _, ok := prov.(Bulker); !ok {
+		return ErrNotBulker(prov)
+	}
+
+	return prov.(Bulker).WaitForFlush(connectionName)
 }
 
 // GetAllMetrics collect all metrics for Databases

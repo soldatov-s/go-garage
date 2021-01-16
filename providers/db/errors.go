@@ -17,26 +17,29 @@ var (
 )
 
 func ErrNotConfigPointer(iface interface{}) error {
-	return errors.New("passed configuration is not *" +
-		goworkerr.ObjName(iface))
+	return errors.New("passed configuration is not *" + goworkerr.ObjName(iface))
 }
 
 func ErrNotEnityPointer(iface interface{}) error {
-	return errors.New("passed enity isn't *" +
-		goworkerr.ObjName(iface))
+	return errors.New("passed enity isn't *" + goworkerr.ObjName(iface))
 }
 
 func ErrNotMutexPointer(iface interface{}) error {
-	return errors.New("passed mutex isn't **" +
-		goworkerr.ObjName(iface))
+	return errors.New("passed mutex isn't **" + goworkerr.ObjName(iface))
 }
 
 func ErrNotMigrationPointer(iface interface{}) error {
-	return errors.New("passed pointer is not *" +
-		goworkerr.ObjName(iface))
+	return errors.New("passed pointer is not *" + goworkerr.ObjName(iface))
 }
 
 func ErrNotQueueItemPointer(iface interface{}) error {
-	return errors.New("passed item isn't *" +
-		goworkerr.ObjName(iface))
+	return errors.New("passed item isn't *" + goworkerr.ObjName(iface))
+}
+
+func ErrNotBulker(iface interface{}) error {
+	return errors.New("passed provider " + goworkerr.ObjName(iface) + "is not bulker")
+}
+
+func ErrNotMigrator(iface interface{}) error {
+	return errors.New("passed provider " + goworkerr.ObjName(iface) + "is not migrator")
 }

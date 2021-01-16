@@ -67,7 +67,7 @@ func NewEnity(ctx context.Context, name string, opts interface{}) (*Enity, error
 	var ok bool
 	conn.options, ok = opts.(*ConnectionOptions)
 	if !ok {
-		return nil, db.ErrInvalidConnectionOptionsPointer(ConnectionOptions{})
+		return nil, db.ErrNotConfigPointer(ConnectionOptions{})
 	}
 
 	conn.options.Validate()
