@@ -70,7 +70,7 @@ func (c *Enity) watcher() bool {
 		// Connect to database.
 		dbConn, err := sqlx.Connect("postgres", c.cfg.ComposeDSN())
 		if err == nil {
-			c.log.Info().Msg("database connection (re)established")
+			c.log.Info().Msg("database connection established")
 			c.Conn = dbConn
 
 			// Migrate database.
