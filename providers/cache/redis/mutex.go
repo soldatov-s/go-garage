@@ -4,9 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KromDaniel/rejonson"
 	"github.com/google/uuid"
 	"github.com/soldatov-s/go-garage/providers/cache"
+	"github.com/soldatov-s/go-garage/x/rejson"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 
 // Mutex provides a distributed mutex across multiple instances via Redis
 type Mutex struct {
-	conn          **rejonson.Client
+	conn          *rejson.Client
 	lockKey       string
 	lockValue     string
 	checkInterval time.Duration
@@ -28,17 +28,12 @@ type Mutex struct {
 }
 
 // NewMutex creates new distributed redis mutex
-func NewMutex(conn **rejonson.Client, expire, checkInterval time.Duration) (*Mutex, error) {
+func NewMutex(conn *rejson.Client, expire, checkInterval time.Duration) (*Mutex, error) {
 	return NewMutexByID(conn, defaultLockID, expire, checkInterval)
 }
 
 // NewMutexByID creates new distributed redis mutex by ID
-func NewMutexByID(conn **rejonson.Client, lockKey interface{}, expire, checkInterval time.Duration) (*Mutex, error) {
-	id, ok := lockKey.(string)
-	if !ok {
-		return nil, cache.ErrNotLockKey
-	}
-
+func NewMutexByID(conn *rejson.Client, lockKey string, expire, checkInterval time.Duration) (*Mutex, error) {
 	checkIntervalValue := checkInterval
 	if checkIntervalValue == 0 {
 		checkIntervalValue = defaultCheckInterval
@@ -51,7 +46,7 @@ func NewMutexByID(conn **rejonson.Client, lockKey interface{}, expire, checkInte
 
 	return &Mutex{
 		conn:          conn,
-		lockKey:       id,
+		lockKey:       lockKey,
 		checkInterval: checkIntervalValue,
 		expire:        expireValue,
 		locked:        false,
@@ -60,42 +55,40 @@ func NewMutexByID(conn **rejonson.Client, lockKey interface{}, expire, checkInte
 
 // Lock sets Redis-lock item. It is blocking call which will wait until
 // redis lock key will be deleted, pretty much like simple mutex.
-func (redisLock *Mutex) Lock() (err error) {
-	redisLock.mu.Lock()
-	return redisLock.commonLock()
+func (m *Mutex) Lock() (err error) {
+	m.mu.Lock()
+	return m.commonLock()
 }
 
 // Unlock deletes Redis-lock item.
-func (redisLock *Mutex) Unlock() (err error) {
-	redisLock.mu.Unlock()
-	return redisLock.commonUnlock()
+func (m *Mutex) Unlock() (err error) {
+	m.mu.Unlock()
+	return m.commonUnlock()
 }
 
 // Extend attempts to extend the timeout of a Redis-lock.
-func (redisLock *Mutex) Extend(timeout time.Duration) (err error) {
-	return redisLock.commonExtend(timeout)
+func (m *Mutex) Extend(timeout time.Duration) (err error) {
+	return m.commonExtend(timeout)
 }
 
 // checkDBConn check that connection not nil and active
-func (redisLock *Mutex) checkDBConn() (conn *rejonson.Client, err error) {
-	conn = *redisLock.conn
-
-	if conn == nil {
-		return nil, cache.ErrDBConnNotEstablished
+func (m *Mutex) checkDBConn() (err error) {
+	if m.conn == nil {
+		return cache.ErrDBConnNotEstablished
 	}
 
-	_, err = conn.Ping().Result()
+	_, err = m.conn.Ping(m.conn.Context()).Result()
 	if err != nil {
-		return nil, cache.ErrDBConnNotEstablished
+		return cache.ErrDBConnNotEstablished
 	}
 
-	return conn, nil
+	return nil
 }
 
-func (redisLock *Mutex) commonLock() (err error) {
+func (m *Mutex) commonLock() (err error) {
 	var result bool
 
-	conn, err := redisLock.checkDBConn()
+	err = m.checkDBConn()
 	if err != nil {
 		return err
 	}
@@ -105,82 +98,82 @@ func (redisLock *Mutex) commonLock() (err error) {
 		return err
 	}
 
-	redisLock.lockValue = newUUID.String()
+	m.lockValue = newUUID.String()
 
-	result, err = conn.SetNX(redisLock.lockKey, redisLock.lockValue, redisLock.expire).Result()
+	result, err = m.conn.SetNX(m.conn.Context(), m.lockKey, m.lockValue, m.expire).Result()
 	if err != nil {
 		return err
 	}
 
 	if !result {
-		redisLock.locked = true
+		m.locked = true
 
 		for {
-			conn, err := redisLock.checkDBConn()
+			err := m.checkDBConn()
 			if err != nil {
 				return err
 			}
 
-			result, err = conn.SetNX(redisLock.lockKey, redisLock.lockValue, redisLock.expire).Result()
+			result, err = m.conn.SetNX(m.conn.Context(), m.lockKey, m.lockValue, m.expire).Result()
 			if err != nil {
 				return err
 			}
 
-			if result || !redisLock.locked {
+			if result || !m.locked {
 				return nil
 			}
 
-			time.Sleep(redisLock.checkInterval)
+			time.Sleep(m.checkInterval)
 		}
 	}
 
 	return nil
 }
 
-func (redisLock *Mutex) commonUnlock() (err error) {
-	if redisLock.locked {
-		conn, err := redisLock.checkDBConn()
+func (m *Mutex) commonUnlock() (err error) {
+	if m.locked {
+		err := m.checkDBConn()
 		if err != nil {
 			return err
 		}
 
-		cmdString, err := conn.Get(redisLock.lockKey).Result()
+		cmdString, err := m.conn.Get(m.conn.Context(), m.lockKey).Result()
 		if err != nil {
 			return err
 		}
 
-		if redisLock.lockValue == cmdString {
-			_, err = conn.Del(redisLock.lockKey).Result()
+		if m.lockValue == cmdString {
+			_, err = m.conn.Del(m.conn.Context(), m.lockKey).Result()
 			if err != nil {
 				return err
 			}
 
-			redisLock.locked = false
+			m.locked = false
 		}
 	}
 
 	return nil
 }
 
-func (redisLock *Mutex) commonExtend(timeout time.Duration) (err error) {
-	if redisLock.locked {
-		conn, err := redisLock.checkDBConn()
+func (m *Mutex) commonExtend(timeout time.Duration) (err error) {
+	if m.locked {
+		err := m.checkDBConn()
 		if err != nil {
 			return err
 		}
 
-		cmdString, err := conn.Get(redisLock.lockKey).Result()
+		cmdString, err := m.conn.Get(m.conn.Context(), m.lockKey).Result()
 		if err != nil {
 			return err
 		}
 
-		if redisLock.lockValue == cmdString {
-			_, err = conn.Expire(redisLock.lockKey, timeout).Result()
+		if m.lockValue == cmdString {
+			_, err = m.conn.Expire(m.conn.Context(), m.lockKey, timeout).Result()
 			if err != nil {
 				return err
 			}
 
-			redisLock.locked = false
+			m.locked = false
 		}
 	}
 

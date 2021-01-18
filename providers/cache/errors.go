@@ -17,9 +17,8 @@ var (
 	ErrNotLockKey              = errors.New("passed lockID is not string")
 )
 
-func ErrInvalidConnectionOptionsPointer(iface interface{}) error {
-	return errors.New("passed configuration is not *" +
-		goworkerr.ObjName(iface))
+func ErrNotConfigPointer(iface interface{}) error {
+	return errors.New("passed configuration is not *" + goworkerr.ObjName(iface))
 }
 
 func ErrNotConnectionPointer(iface interface{}) error {

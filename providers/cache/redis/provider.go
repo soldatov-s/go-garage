@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"time"
 
 	providerwithmetrics "github.com/soldatov-s/go-garage/providers/base/provider/with_metrics"
 	"github.com/soldatov-s/go-garage/providers/cache"
@@ -110,8 +109,8 @@ func (p *Provider) Delete(connectionName, key string) error {
 	return conn.Delete(key)
 }
 
-// ClearConnection clear all items from selected connection.
-func (p *Provider) ClearConnection(connectionName string) error {
+// Clear clear all items from selected connection.
+func (p *Provider) Clear(connectionName string) error {
 	conn, err := p.getEnity(connectionName)
 	if err != nil {
 		return err
@@ -120,8 +119,8 @@ func (p *Provider) ClearConnection(connectionName string) error {
 	return conn.Clear()
 }
 
-// Clear all items from all connections.
-func (p *Provider) Clear() error {
+// ClearAll clear all items from all connections.
+func (p *Provider) ClearAll() error {
 	var err error
 	p.Entitys.Range(func(_, v interface{}) bool {
 		if err = v.(*Enity).Clear(); err != nil {
@@ -131,52 +130,4 @@ func (p *Provider) Clear() error {
 	})
 
 	return err
-}
-
-// NewMutex creates new distributed mutex
-func (p *Provider) NewMutex(connectionName string, expire, checkInterval time.Duration, mutex interface{}) error {
-	return p.NewMutexByID(
-		connectionName,
-		defaultLockID,
-		expire,
-		checkInterval,
-		mutex,
-	)
-}
-
-// NewMutexByID creates new distributed postgresql mutex by ID
-func (p *Provider) NewMutexByID(
-	connectionName string,
-	lockID interface{},
-	expire, checkInterval time.Duration,
-	mutex interface{}) error {
-	var conn *Enity
-
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
-
-	// If conn was passed - then we should check it's type because in
-	// 99.9% of cases user will want to do something with it. Without
-	// this check application may panic.
-	if mutex != nil {
-		mutexPointer, ok := mutex.(**Mutex)
-		if !ok {
-			return cache.ErrNotMutexPointer(Mutex{})
-		}
-
-		p.Log.Debug().Msg("copying pointer to real mutex")
-
-		var err1 error
-
-		*mutexPointer, err1 = conn.NewMutexByID(lockID, expire, checkInterval)
-		if err1 != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	return cache.ErrMutexPointerIsNil
 }

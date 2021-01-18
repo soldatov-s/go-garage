@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KromDaniel/rejonson"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/providers/cache"
@@ -13,114 +12,114 @@ import (
 	"github.com/soldatov-s/go-garage/providers/logger"
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
+	"github.com/soldatov-s/go-garage/x/rejson"
 )
 
 // Enity is a connection controlling structure. It controls
 // connection, asynchronous queue and everything that related to
 // specified connection.
 type Enity struct {
-	ctx     context.Context
-	log     zerolog.Logger
-	name    string
-	options *Config
+	// Metrics
+	stats.Service
 
-	Conn *rejonson.Client
+	Conn *rejson.Client
+
+	ctx  context.Context
+	log  zerolog.Logger
+	name string
+	cfg  *Config
 
 	// Shutdown flags.
 	weAreShuttingDown  bool
 	connWatcherStopped bool
-
-	// Metrics
-	stats.Service
 }
 
 // NewEnity create new enity.
-func NewEnity(ctx context.Context, name string, opts interface{}) (*Enity, error) {
+func NewEnity(ctx context.Context, name string, cfg interface{}) (*Enity, error) {
 	if name == "" {
 		return nil, errors.ErrEmptyEnityName
 	}
 
+	// Checking that passed config is OUR.
+	if _, ok := cfg.(*Config); !ok {
+		return nil, cache.ErrNotConfigPointer(Config{})
+	}
+
 	conn := &Enity{
-		name: name,
-		ctx:  logger.Registrate(ctx),
+		name:               name,
+		ctx:                logger.Registrate(ctx),
+		log:                logger.Get(ctx).GetLogger(cache.ProvidersName, nil).With().Str("connection", name).Logger(),
+		cfg:                cfg.(*Config).SetDefault(),
+		connWatcherStopped: true,
 	}
 
-	logger.Get(conn.ctx).GetLogger(cache.ProvidersName, nil).Info().Msgf("initializing enity " + name + "...")
-	conn.log = logger.Get(conn.ctx).GetLogger(cache.ProvidersName, nil).With().Str("connection", name).Logger()
-
-	// We should not attempt to establish connection if passed options
-	// isn't OUR options.
-	var ok bool
-	conn.options, ok = opts.(*Config)
-	if !ok {
-		return nil, cache.ErrInvalidConnectionOptionsPointer(Config{})
-	}
-
-	conn.options.Validate()
-	conn.connWatcherStopped = true
+	conn.log.Info().Msgf("initializing enity " + name + "...")
 
 	return conn, nil
 }
 
 // Shutdown shutdowns queue worker and connection watcher. Later will also
 // close connection to database. This is a blocking call.
-func (conn *Enity) Shutdown() error {
-	conn.log.Info().Msg("shutting down database connection watcher and queue worker")
-	conn.weAreShuttingDown = true
+func (c *Enity) Shutdown() error {
+	c.log.Info().Msg("shutting down database connection watcher and queue worker")
+	c.weAreShuttingDown = true
 
-	for {
-		if conn.connWatcherStopped {
-			break
+	if c.cfg.StartWatcher {
+		for {
+			if c.connWatcherStopped {
+				break
+			}
+			time.Sleep(time.Millisecond * 500)
 		}
-
-		time.Sleep(time.Millisecond * 500)
+	} else {
+		c.shutdown()
 	}
-	conn.log.Info().Msg("connection shutted down")
+	c.log.Info().Msg("connection shutted down")
 
 	return nil
 }
 
 // SetConnPoolLifetime sets connection lifetime.
-func (conn *Enity) SetConnPoolLifetime(connMaxLifetime time.Duration) {
+func (c *Enity) SetConnPoolLifetime(connMaxLifetime time.Duration) {
 	// First - set passed data in connection options.
-	conn.options.MaxConnectionLifetime = connMaxLifetime
+	c.cfg.MaxConnectionLifetime = connMaxLifetime
 
 	// If connection already established - tweak it.
-	if conn.Conn != nil {
-		conn.Conn.Options().MaxConnAge = connMaxLifetime
+	if c.Conn != nil {
+		c.Conn.Options().MaxConnAge = connMaxLifetime
 	}
 }
 
 // SetConnPoolLimits sets pool limits for connections counts.
-func (conn *Enity) SetConnPoolLimits(minIdleConnections, maxOpenedConnections int) {
+func (c *Enity) SetConnPoolLimits(minIdleConnections, maxOpenedConnections int) {
 	// First - set passed data in connection options.
-	conn.options.MinIdleConnections = minIdleConnections
-	conn.options.MaxOpenedConnections = maxOpenedConnections
+	c.cfg.MinIdleConnections = minIdleConnections
+	c.cfg.MaxOpenedConnections = maxOpenedConnections
 
 	// If connection already established - tweak it.
-	if conn.Conn != nil {
-		conn.Conn.Options().MinIdleConns = minIdleConnections
-		conn.Conn.Options().PoolSize = maxOpenedConnections
+	if c.Conn != nil {
+		c.Conn.Options().MinIdleConns = minIdleConnections
+		c.Conn.Options().PoolSize = maxOpenedConnections
 	}
 }
 
 // SetPoolLimits sets connection pool limits.
-func (conn *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration) {
-	conn.SetConnPoolLimits(maxIdleConnections, maxOpenedConnections)
-	conn.SetConnPoolLifetime(connMaxLifetime)
+func (c *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration) {
+	c.SetConnPoolLimits(maxIdleConnections, maxOpenedConnections)
+	c.SetConnPoolLifetime(connMaxLifetime)
 }
 
 // Start starts connection workers and connection procedure itself.
-func (conn *Enity) Start() error {
+func (c *Enity) Start() error {
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
-	if conn.connWatcherStopped {
-		if conn.options.StartWatcher {
-			conn.connWatcherStopped = false
-			go conn.startWatcher()
+	if c.connWatcherStopped {
+		if c.cfg.StartWatcher {
+			c.connWatcherStopped = false
+			go c.startWatcher()
 		} else {
 			// Manually start the connection once to establish connection
-			_ = conn.watcher()
+			_ = c.watcher()
 		}
 	}
 
@@ -129,20 +128,20 @@ func (conn *Enity) Start() error {
 
 // WaitForEstablishing will block execution until connection will be
 // successfully established.
-func (conn *Enity) WaitForEstablishing() {
+func (c *Enity) WaitForEstablishing() {
 	for {
-		if conn.Conn != nil {
+		if c.Conn != nil {
 			break
 		}
 
-		conn.log.Debug().Msg("connection isn't ready - not yet established")
+		c.log.Debug().Msg("connection isn't ready - not yet established")
 		time.Sleep(time.Millisecond * 100)
 	}
 }
 
 // Get item from cache by key.
-func (conn *Enity) Get(key string, value interface{}) error {
-	cmdString := conn.Conn.Get(conn.options.KeyPrefix + key)
+func (c *Enity) Get(key string, value interface{}) error {
+	cmdString := c.Conn.Get(c.Conn.Context(), c.cfg.KeyPrefix+key)
 	_, err := cmdString.Result()
 
 	if err != nil {
@@ -154,14 +153,14 @@ func (conn *Enity) Get(key string, value interface{}) error {
 		return err
 	}
 
-	conn.log.Debug().Msgf("get value by key %s from cache", key)
+	c.log.Debug().Msgf("get value by key %s from cache", key)
 
 	return nil
 }
 
 // JSONGet item from cache by key.
-func (conn *Enity) JSONGet(key, path string, value interface{}) error {
-	cmdString := conn.Conn.JsonGet(conn.options.KeyPrefix+key, path)
+func (c *Enity) JSONGet(key, path string, value interface{}) error {
+	cmdString := c.Conn.JSONGet(c.Conn.Context(), c.cfg.KeyPrefix+key, path)
 	_, err := cmdString.Result()
 
 	if err != nil {
@@ -173,93 +172,93 @@ func (conn *Enity) JSONGet(key, path string, value interface{}) error {
 		return err
 	}
 
-	conn.log.Debug().Msgf("JSONGet value by key %s from cache, path %s", key, path)
+	c.log.Debug().Msgf("jsonget value by key %s from cache, path %s", key, path)
 
 	return nil
 }
 
 // Set item in cache by key.
-func (conn *Enity) Set(key string, value interface{}) error {
-	_, err := conn.Conn.Set(conn.options.KeyPrefix+key, value, conn.options.ClearTime).Result()
+func (c *Enity) Set(key string, value interface{}) error {
+	_, err := c.Conn.Set(c.Conn.Context(), c.cfg.KeyPrefix+key, value, c.cfg.ClearTime).Result()
 	if err != nil {
 		return err
 	}
 
-	conn.log.Debug().Msgf("set key %s in cache, value %+v", key, value)
+	c.log.Debug().Msgf("set key %s in cache, value %+v", key, value)
 
 	return nil
 }
 
 // SetNX (Not eXist) item in cache by key.
-func (conn *Enity) SetNX(key string, value interface{}) error {
-	_, err := conn.Conn.SetNX(conn.options.KeyPrefix+key, value, conn.options.ClearTime).Result()
+func (c *Enity) SetNX(key string, value interface{}) error {
+	_, err := c.Conn.SetNX(c.Conn.Context(), c.cfg.KeyPrefix+key, value, c.cfg.ClearTime).Result()
 	if err != nil {
 		return err
 	}
 
-	conn.log.Debug().Msgf("SetNX key %s in cache, value %+v", key, value)
+	c.log.Debug().Msgf("setnx key %s in cache, value %+v", key, value)
 
 	return nil
 }
 
 // JSONSet item in cache by key.
-func (conn *Enity) JSONSet(key, path, json string) error {
-	_, err := conn.Conn.JsonSet(conn.options.KeyPrefix+key, path, json).Result()
+func (c *Enity) JSONSet(key, path, json string) error {
+	_, err := c.Conn.JSONSet(c.Conn.Context(), c.cfg.KeyPrefix+key, path, json).Result()
 	if err != nil {
 		return err
 	}
 
-	if conn.options.ClearTime > 0 {
-		_, err = conn.Conn.Expire(conn.options.KeyPrefix+key, conn.options.ClearTime).Result()
+	if c.cfg.ClearTime > 0 {
+		_, err = c.Conn.Expire(c.Conn.Context(), c.cfg.KeyPrefix+key, c.cfg.ClearTime).Result()
 		if err != nil {
 			return err
 		}
 	}
 
-	conn.log.Debug().Msgf("JSONSet key %s in cache, path %s, json %s", key, path, json)
+	c.log.Debug().Msgf("jsonset key %s in cache, path %s, json %s", key, path, json)
 
 	return nil
 }
 
 // JSONSetNX item in cache by key.
-func (conn *Enity) JSONSetNX(key, path, json string) error {
-	_, err := conn.Conn.JsonSet(conn.options.KeyPrefix+key, path, json, "NX").Result()
+func (c *Enity) JSONSetNX(key, path, json string) error {
+	_, err := c.Conn.JSONSet(c.Conn.Context(), c.cfg.KeyPrefix+key, path, json, "NX").Result()
 	if err != nil {
 		return err
 	}
 
-	if conn.options.ClearTime > 0 {
-		_, err = conn.Conn.Expire(conn.options.KeyPrefix+key, conn.options.ClearTime).Result()
+	if c.cfg.ClearTime > 0 {
+		_, err = c.Conn.Expire(c.Conn.Context(), c.cfg.KeyPrefix+key, c.cfg.ClearTime).Result()
 		if err != nil {
 			return err
 		}
 	}
 
-	conn.log.Debug().Msgf("JSONSetNX key %s in cache, path %s, json %s", key, path, json)
+	c.log.Debug().Msgf("jsonsetnx key %s in cache, path %s, json %s", key, path, json)
 
 	return nil
 }
 
 // Delete item from cache by key.
-func (conn *Enity) Delete(key string) error {
-	_, err := conn.Conn.Del(conn.options.KeyPrefix + key).Result()
+func (c *Enity) Delete(key string) error {
+	_, err := c.Conn.Del(c.Conn.Context(), c.cfg.KeyPrefix+key).Result()
 	if err != nil {
 		return err
 	}
 
-	conn.log.Debug().Msgf("delete key %s from cache", key)
+	c.log.Debug().Msgf("delete key %s from cache", key)
 
 	return nil
 }
 
 // Size return count of item in cache
-func (conn *Enity) Size() int {
+func (c *Enity) Size() int {
 	length := 0
 	var cursor uint64
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = conn.Conn.Scan(cursor, conn.options.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = c.Conn.Scan(c.Conn.Context(), cursor, c.cfg.KeyPrefix+"*", 10).Result()
 		if err != nil {
 			return -1
 		}
@@ -271,29 +270,29 @@ func (conn *Enity) Size() int {
 		}
 	}
 
-	conn.log.Debug().Msgf("cache size is %d", length)
+	c.log.Debug().Msgf("cache size is %d", length)
 
 	return length
 }
 
 // Clear clear all items from selected connection.
-func (conn *Enity) Clear() error {
+func (c *Enity) Clear() error {
 	var cursor uint64
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = conn.Conn.Scan(cursor, conn.options.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = c.Conn.Scan(c.Conn.Context(), cursor, c.cfg.KeyPrefix+"*", 10).Result()
 		if err != nil {
 			return err
 		}
 
-		pipe := conn.Conn.Pipeline()
-		err = pipe.Del(keys...).Err()
+		pipe := c.Conn.Pipeline()
+		err = pipe.Del(c.Conn.Context(), keys...).Err()
 		if err != nil {
 			return err
 		}
 
-		_, err = pipe.Exec()
+		_, err = pipe.Exec(c.Conn.Context())
 		if err != nil {
 			return err
 		}
@@ -302,34 +301,34 @@ func (conn *Enity) Clear() error {
 		}
 	}
 
-	conn.log.Debug().Msgf("delete all keys from cache")
+	c.log.Debug().Msgf("delete all keys from cache")
 
 	return nil
 }
 
 // NewMutex create new redis mutex
-func (conn *Enity) NewMutex(expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutex(&conn.Conn, expire, checkInterval)
+func (c *Enity) NewMutex(expire, checkInterval time.Duration) (*Mutex, error) {
+	return NewMutex(c.Conn, expire, checkInterval)
 }
 
 // NewMutexByID create new redis mutex with selected id
-func (conn *Enity) NewMutexByID(lockID interface{}, expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutexByID(&conn.Conn, lockID, expire, checkInterval)
+func (c *Enity) NewMutexByID(lockID string, expire, checkInterval time.Duration) (*Mutex, error) {
+	return NewMutexByID(c.Conn, lockID, expire, checkInterval)
 }
 
 // GetMetrics return map of the metrics from cache connection
-func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
-	_ = conn.Service.GetMetrics(prefix)
-	conn.Metrics[prefix+"_"+conn.name+"_status"] = &stats.MetricOptions{
+func (c *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
+	_ = c.Service.GetMetrics(prefix)
+	c.Metrics[prefix+"_"+c.name+"_status"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_status",
-				Help: prefix + " " + conn.name + " status link to " + utils.RedactedDSN(conn.options.DSN),
+				Name: prefix + "_" + c.name + "_status",
+				Help: prefix + " " + c.name + " status link to " + utils.RedactedDSN(c.cfg.DSN),
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(0)
-			if conn.Conn != nil {
-				_, err := conn.Conn.Ping().Result()
+			if c.Conn != nil {
+				err := c.ping()
 				if err == nil {
 					(m.(prometheus.Gauge)).Set(1)
 				}
@@ -337,33 +336,33 @@ func (conn *Enity) GetMetrics(prefix string) stats.MapMetricsOptions {
 		},
 	}
 
-	conn.Metrics[prefix+"_"+conn.name+"_cache_size"] = &stats.MetricOptions{
+	c.Metrics[prefix+"_"+c.name+"_cache_size"] = &stats.MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Name: prefix + "_" + conn.name + "_cache_size",
-				Help: prefix + " " + conn.name + " cache size",
+				Name: prefix + "_" + c.name + "_cache_size",
+				Help: prefix + " " + c.name + " cache size",
 			}),
 		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(float64(conn.Size()))
+			(m.(prometheus.Gauge)).Set(float64(c.Size()))
 		},
 	}
 
-	return conn.Metrics
+	return c.Metrics
 }
 
 // GetReadyHandlers return array of the readyHandlers from database connection
-func (conn *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
-	_ = conn.Service.GetReadyHandlers(prefix)
-	conn.ReadyHandlers[strings.ToUpper(prefix+"_"+conn.name+"_notfailed")] = func() (bool, string) {
-		if conn.Conn == nil {
+func (c *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
+	_ = c.Service.GetReadyHandlers(prefix)
+	c.ReadyHandlers[strings.ToUpper(prefix+"_"+c.name+"_notfailed")] = func() (bool, string) {
+		if c.Conn == nil {
 			return false, "not connected"
 		}
 
-		if _, err := conn.Conn.Ping().Result(); err != nil {
+		if err := c.ping(); err != nil {
 			return false, err.Error()
 		}
 
 		return true, ""
 	}
-	return conn.ReadyHandlers
+	return c.ReadyHandlers
 }

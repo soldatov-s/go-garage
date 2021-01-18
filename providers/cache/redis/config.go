@@ -2,13 +2,14 @@ package redis
 
 import (
 	"time"
+
+	"github.com/go-redis/redis/v8"
 )
 
 const (
 	// Default DSN and connection parameters that will be passed to
 	// database driver.
 	defaultDSN     = "redis://rd:rd@localhost:6379"
-	defaultOptions = "connect_timeout=10"
 	defaultTimeout = 10 * time.Second
 
 	// Default pool settings.
@@ -35,9 +36,6 @@ type Config struct {
 	// MaxOpenedConnections specify upper limit for opened connections
 	// count. Default: 30 connections.
 	MaxOpenedConnections int `envconfig:"optional"`
-	// Options is a string with additional options that will be passed
-	// to connection. Default: "connect_timeout=10&sslmode=disable".
-	Options string `envconfig:"optional"`
 	// StartWatcher indicates to connection controller that it should
 	// also start asynchronous connection watcher.
 	StartWatcher bool `envconfig:"optional"`
@@ -52,34 +50,49 @@ type Config struct {
 	ClearTime time.Duration `envconfig:"optional"`
 }
 
-// Validate checks connection options. If required field is empty - it will
+// SetDefault checks connection options. If required field is empty - it will
 // be filled with some default value.
-func (co *Config) Validate() {
-	if co.DSN == "" {
-		co.DSN = defaultDSN
+func (c *Config) SetDefault() *Config {
+	cfgCopy := *c
+
+	if cfgCopy.DSN == "" {
+		cfgCopy.DSN = defaultDSN
 	}
 
-	if co.MaxConnectionLifetime == 0 {
-		co.MaxConnectionLifetime = defaultMaxConnLifetime
+	if cfgCopy.MaxConnectionLifetime == 0 {
+		cfgCopy.MaxConnectionLifetime = defaultMaxConnLifetime
 	}
 
-	if co.MinIdleConnections == 0 {
-		co.MinIdleConnections = defaultMinIdleConnections
+	if cfgCopy.MinIdleConnections == 0 {
+		cfgCopy.MinIdleConnections = defaultMinIdleConnections
 	}
 
-	if co.MaxOpenedConnections == 0 {
-		co.MaxOpenedConnections = defaultMaxOpenedConnections
+	if cfgCopy.MaxOpenedConnections == 0 {
+		cfgCopy.MaxOpenedConnections = defaultMaxOpenedConnections
 	}
 
-	if co.Options == "" {
-		co.Options = defaultOptions
+	if cfgCopy.Timeout == 0 {
+		cfgCopy.Timeout = defaultTimeout
 	}
 
-	if co.Timeout == 0 {
-		co.Timeout = defaultTimeout
+	if cfgCopy.KeyPrefix == "" {
+		cfgCopy.KeyPrefix = defaulKeyPrefix
 	}
 
-	if co.KeyPrefix == "" {
-		co.KeyPrefix = defaulKeyPrefix
+	return &cfgCopy
+}
+
+func (c *Config) Options() (*redis.Options, error) {
+	// Connect to database.
+	connOptions, err := redis.ParseURL(c.DSN)
+	if err != nil {
+		return nil, err
 	}
+
+	// Set connection pooling options.
+	connOptions.MaxConnAge = c.MaxConnectionLifetime
+	connOptions.MinIdleConns = c.MinIdleConnections
+	connOptions.PoolSize = c.MaxOpenedConnections
+
+	return connOptions, nil
 }

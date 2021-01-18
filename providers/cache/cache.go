@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"time"
 
 	"github.com/soldatov-s/go-garage/providers/base/provider"
 	providerswithmetrics "github.com/soldatov-s/go-garage/providers/base/providers/with_metrics"
@@ -30,13 +29,9 @@ type Provider interface {
 	// Delete item from cache by key.
 	Delete(connectionName, key string) error
 	// Clear all items from selected connection.
-	ClearConnection(connectionName string) error
+	Clear(connectionName string) error
 	// Clear all items from all connections.
-	Clear() error
-	// NewMutex creates new distributed cache mutex
-	NewMutex(connectionName string, expire, checkInterval time.Duration, mutex interface{}) error
-	// NewMutexByID creates new distributed cache mutex by ID
-	NewMutexByID(connectionName string, lockID interface{}, expire, checkInterval time.Duration, mutex interface{}) error
+	ClearAll() error
 }
 
 // Caches is a controlling structure for all caches and providers.
