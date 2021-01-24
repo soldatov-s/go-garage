@@ -19,4 +19,5 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/vrischmann/envconfig v1.2.0
 	go.mongodb.org/mongo-driver v1.4.4
+	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 )
