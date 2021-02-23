@@ -33,7 +33,7 @@ func Forbidden(ec Context, err error) error {
 // NotFound return err 404
 func NotFound(ec Context, err error) error {
 	return ec.JSON(
-		http.StatusBadRequest,
+		http.StatusNotFound,
 		httpsrv.NotFound(err),
 	)
 }
