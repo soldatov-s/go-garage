@@ -12,6 +12,18 @@ type NullTime struct {
 	sql.NullTime
 }
 
+// SetTime sets time to NullTime
+func (x NullTime) SetTime(t time.Time) {
+	x.Valid = true
+	x.Time = t
+}
+
+// SetNow sets time to NullTime
+// if t is zero, sets current time
+func (x NullTime) SetNow() {
+	x.SetTime(time.Now())
+}
+
 // MarshalJSON method is called by json.Marshal,
 // whenever it is of type NullString
 func (x *NullTime) MarshalJSON() ([]byte, error) {

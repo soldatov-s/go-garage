@@ -14,20 +14,14 @@ type Timestamp struct {
 
 func (t *Timestamp) CreateTimestamp() {
 	timeNow := time.Now()
-	t.CreatedAt.Time = timeNow
-	t.CreatedAt.Valid = true
-	t.UpdatedAt.Time = timeNow
-	t.UpdatedAt.Valid = true
+	t.CreatedAt.SetTime(timeNow)
+	t.UpdatedAt.SetTime(timeNow)
 }
 
 func (t *Timestamp) UpdateTimestamp() {
-	timeNow := time.Now()
-	t.UpdatedAt.Time = timeNow
-	t.UpdatedAt.Valid = true
+	t.UpdatedAt.SetNow()
 }
 
 func (t *Timestamp) DeleteTimestamp() {
-	timeNow := time.Now()
-	t.DeletedAt.Time = timeNow
-	t.DeletedAt.Valid = true
+	t.DeletedAt.SetNow()
 }
