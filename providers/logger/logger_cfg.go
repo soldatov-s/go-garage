@@ -1,6 +1,8 @@
 package logger
 
 type Config struct {
+	// HumanFriendly enable writes log in human-friendly format to Out
+	HumanFriendly bool
 	// NoColoredOutput forces logger to output things without
 	// shell colorcodes.
 	NoColoredOutput bool `envconfig:"optional"`
@@ -17,11 +19,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		Level:           LoggerLevelDisabled,
 		NoColoredOutput: true,
+		HumanFriendly:   false,
 		WithTrace:       false,
 	}
 }
 
-func (c *Config) Validate() {
+func (c *Config) SetDefault() {
 	if c.Level == "" {
 		c.Level = "INFO"
 	}

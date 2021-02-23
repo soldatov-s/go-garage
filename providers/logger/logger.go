@@ -2,6 +2,7 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strconv"
@@ -104,7 +105,7 @@ func (l *Logger) InitializeDefault() {
 }
 
 func (l *Logger) Initialize(cfg *Config) {
-	cfg.Validate()
+	cfg.SetDefault()
 	switch strings.ToUpper(cfg.Level) {
 	case LoggerLevelDebug:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
@@ -124,27 +125,31 @@ func (l *Logger) Initialize(cfg *Config) {
 		zerolog.SetGlobalLevel(zerolog.Disabled)
 	}
 
-	output := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		NoColor:    cfg.NoColoredOutput,
-		TimeFormat: time.RFC3339,
-	}
+	var output io.Writer = os.Stdout
 
-	output.FormatLevel = func(i interface{}) string {
-		var v string
-
-		if ii, ok := i.(string); ok {
-			ii = strings.ToUpper(ii)
-			switch ii {
-			case LoggerLevelDebug, LoggerLevelError, LoggerLevelFatal,
-				LoggerLevelInfo, LoggerLevelWarn, LoggerLevelPanic, LoggerLevelTrace:
-				v = fmt.Sprintf("%-5s", ii)
-			default:
-				v = ii
-			}
+	if cfg.HumanFriendly {
+		output := zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			NoColor:    cfg.NoColoredOutput,
+			TimeFormat: time.RFC3339,
 		}
 
-		return fmt.Sprintf("| %s |", v)
+		output.FormatLevel = func(i interface{}) string {
+			var v string
+
+			if ii, ok := i.(string); ok {
+				ii = strings.ToUpper(ii)
+				switch ii {
+				case LoggerLevelDebug, LoggerLevelError, LoggerLevelFatal,
+					LoggerLevelInfo, LoggerLevelWarn, LoggerLevelPanic, LoggerLevelTrace:
+					v = fmt.Sprintf("%-5s", ii)
+				default:
+					v = ii
+				}
+			}
+
+			return fmt.Sprintf("| %s |", v)
+		}
 	}
 
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
