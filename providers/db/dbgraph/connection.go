@@ -3,7 +3,6 @@ package dbgraph
 import (
 	"context"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dgraph-io/dgo/v200"
@@ -28,11 +27,10 @@ type Enity struct {
 
 	grpcConn *grpc.ClientConn
 
-	ctx           context.Context
-	log           zerolog.Logger
-	name          string
-	cfg           *Config
-	migratedMutex sync.Mutex
+	ctx  context.Context
+	log  zerolog.Logger
+	name string
+	cfg  *Config
 
 	// Shutdown flags.
 	weAreShuttingDown  bool
