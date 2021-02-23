@@ -13,14 +13,14 @@ type NullTime struct {
 }
 
 // SetTime sets time to NullTime
-func (x NullTime) SetTime(t time.Time) {
+func (x *NullTime) SetTime(t time.Time) {
 	x.Valid = true
 	x.Time = t
 }
 
 // SetNow sets time to NullTime
 // if t is zero, sets current time
-func (x NullTime) SetNow() {
+func (x *NullTime) SetNow() {
 	x.SetTime(time.Now())
 }
 
