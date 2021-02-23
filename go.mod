@@ -4,7 +4,6 @@ go 1.15
 
 require (
 	github.com/ClickHouse/clickhouse-go v1.4.3
-	github.com/dgraph-io/dgo v1.0.0 // indirect
 	github.com/dgraph-io/dgo/v200 v200.0.0-20210212152539-e0a5bde40ba2
 	github.com/go-redis/redis/v8 v8.4.8
 	github.com/google/uuid v1.1.4
