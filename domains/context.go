@@ -16,22 +16,20 @@ type Domains struct {
 }
 
 func Create(ctx context.Context) (context.Context, *Domains) {
-	p := &Domains{}
-	return context.WithValue(ctx, DomainsItem, p), p
+	d := &Domains{}
+	return context.WithValue(ctx, DomainsItem, d), d
 }
 
 func Get(ctx context.Context) *Domains {
-	v := ctx.Value(DomainsItem)
-	if v != nil {
+	if v := ctx.Value(DomainsItem); v != nil {
 		return v.(*Domains)
 	}
 	return nil
 }
 
 func GetByName(ctx context.Context, name string) interface{} {
-	p := Get(ctx)
-	if p != nil {
-		v, _ := ctx.Value(DomainsItem).(*Domains).Load(name)
+	if d := Get(ctx); d != nil {
+		v, _ := d.Load(name)
 		return v
 	}
 

@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/soldatov-s/go-garage/domains"
 	"github.com/soldatov-s/go-garage/meta"
 	"github.com/soldatov-s/go-garage/providers"
 	baseproviders "github.com/soldatov-s/go-garage/providers/base/providers"
@@ -121,6 +122,15 @@ func StartStatistics(ctx context.Context) error {
 
 func providersOrder() []string {
 	return []string{db.ProvidersName, cache.ProvidersName, httpsrv.ProvidersName}
+}
+
+func CreateAppContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, _ = providers.Create(ctx)
+	ctx, _ = domains.Create(ctx)
+	return ctx
 }
 
 // Start all providers

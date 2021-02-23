@@ -21,17 +21,15 @@ func Create(ctx context.Context) (context.Context, *Providers) {
 }
 
 func Get(ctx context.Context) *Providers {
-	v := ctx.Value(ProvidersItem)
-	if v != nil {
+	if v := ctx.Value(ProvidersItem); v != nil {
 		return v.(*Providers)
 	}
 	return nil
 }
 
 func GetByName(ctx context.Context, name string) interface{} {
-	p := Get(ctx)
-	if p != nil {
-		v, _ := ctx.Value(ProvidersItem).(*Providers).Load(name)
+	if p := Get(ctx); p != nil {
+		v, _ := p.Load(name)
 		return v
 	}
 
