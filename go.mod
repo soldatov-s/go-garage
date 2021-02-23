@@ -4,6 +4,8 @@ go 1.15
 
 require (
 	github.com/ClickHouse/clickhouse-go v1.4.3
+	github.com/dgraph-io/dgo v1.0.0 // indirect
+	github.com/dgraph-io/dgo/v200 v200.0.0-20210212152539-e0a5bde40ba2
 	github.com/go-redis/redis/v8 v8.4.8
 	github.com/google/uuid v1.1.4
 	github.com/jmoiron/sqlx v1.2.0
@@ -20,4 +22,5 @@ require (
 	github.com/vrischmann/envconfig v1.2.0
 	go.mongodb.org/mongo-driver v1.4.4
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
+	google.golang.org/grpc v1.27.0
 )
