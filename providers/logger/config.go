@@ -2,7 +2,7 @@ package logger
 
 type Config struct {
 	// HumanFriendly enable writes log in human-friendly format to Out
-	HumanFriendly bool
+	HumanFriendly bool `envconfig:"optional"`
 	// NoColoredOutput forces logger to output things without
 	// shell colorcodes.
 	NoColoredOutput bool `envconfig:"optional"`
