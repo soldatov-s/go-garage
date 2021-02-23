@@ -125,9 +125,6 @@ func providersOrder() []string {
 }
 
 func CreateAppContext(ctx context.Context) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	ctx, _ = providers.Create(ctx)
 	ctx, _ = domains.Create(ctx)
 	return ctx
