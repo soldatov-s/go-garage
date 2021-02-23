@@ -18,10 +18,9 @@ func (x *NullTime) SetTime(t time.Time) {
 	x.Time = t
 }
 
-// SetNow sets time to NullTime
-// if t is zero, sets current time
+// SetNow sets current UTC time to NullTime structure
 func (x *NullTime) SetNow() {
-	x.SetTime(time.Now())
+	x.SetTime(time.Now().UTC())
 }
 
 // MarshalJSON method is called by json.Marshal,
