@@ -162,3 +162,8 @@ func (m *Mutex) commonUnlock(request string) (err error) {
 
 	return nil
 }
+
+// IsLocked returns locked or not locked mutex
+func (m *Mutex) IsLocked() bool {
+	return m.locked
+}
