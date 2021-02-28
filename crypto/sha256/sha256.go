@@ -1,4 +1,4 @@
-package password
+package sha256
 
 import (
 	"bytes"
