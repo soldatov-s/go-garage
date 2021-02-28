@@ -23,5 +23,7 @@ func (t *Timestamp) UpdateTimestamp() {
 }
 
 func (t *Timestamp) DeleteTimestamp() {
-	t.DeletedAt.SetNow()
+	timeNow := time.Now()
+	t.UpdatedAt.SetTime(timeNow)
+	t.DeletedAt.SetTime(timeNow)
 }
