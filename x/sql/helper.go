@@ -12,6 +12,32 @@ type RequestParameter interface {
 	SQLParamsRequest() []string
 }
 
+func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error {
+	if conn == nil {
+		return db.ErrDBConnNotEstablished
+	}
+
+	err := conn.Get(data, conn.Rebind(utils.JoinStrings(" ", "SELECT *", target, "WHERE id=$1")), id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
+	if conn == nil {
+		return db.ErrDBConnNotEstablished
+	}
+
+	_, err = conn.Exec(conn.Rebind(utils.JoinStrings(" ", "DELETE FROM", target, "WHERE id=$1")), id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
 	if conn == nil {
 		return nil, db.ErrDBConnNotEstablished
