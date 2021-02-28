@@ -7,18 +7,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type Context interface {
+type Context struct {
 	echo.Context
 }
 
-func GetReqID(ec Context) string {
+func (ec Context) GetReqID() string {
 	return ec.Request().Header.Get("x-request-id")
 }
 
-func GetLog(ec Context) *zerolog.Logger {
-	return ec.Get(zerologWithReqID).(*zerolog.Logger)
+func (ec Context) GetLog() *zerolog.Logger {
+	log := ec.Get(zerologWithReqID)
+	if log == nil {
+		return &zerolog.Logger{}
+	}
+	return log.(*zerolog.Logger)
 }
 
-func GetInt64Param(ec Context, param string) (int64, error) {
+func (ec Context) GetInt64Param(param string) (int64, error) {
 	return strconv.ParseInt(ec.Param(param), 10, 64)
 }

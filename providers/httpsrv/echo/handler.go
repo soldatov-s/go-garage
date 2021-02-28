@@ -25,6 +25,6 @@ func Handler(f HandlerFunc) echo.HandlerFunc {
 			methodName := handlerName(f)
 			c.Set("swMethodName", methodName)
 		}
-		return f(c)
+		return f(Context{c})
 	}
 }
