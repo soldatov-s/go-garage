@@ -1,3 +1,6 @@
+[![GoDoc](https://pkg.go.dev/github.com/soldatov-s/go-garage?status.svg)](https://pkg.go.dev/github.com/soldatov-s/go-garage)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 # go-garage
 The framework for fast creating microservice with logger, http, db, metrics, queues
 
@@ -10,7 +13,7 @@ go-garage supports:
   * postgresql (with migrations based on [pressly/goose](https://github.com/pressly/goose))
   * clickhouse (with migrations based on [pressly/goose](https://github.com/pressly/goose))
 * caches:
- * redis
+  * redis
 * metrics (each may be extended in user service):
   * alive handler
   * ready handler (includes communicate with databases and cache)
