@@ -1,6 +1,8 @@
 package echo
 
 import (
+	"strconv"
+
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 )
@@ -15,4 +17,8 @@ func GetReqID(ec Context) string {
 
 func GetLog(ec Context) *zerolog.Logger {
 	return ec.Get(zerologWithReqID).(*zerolog.Logger)
+}
+
+func GetInt64Param(ec Context, param string) (int64, error) {
+	return strconv.ParseInt(ec.Param(param), 10, 64)
 }
