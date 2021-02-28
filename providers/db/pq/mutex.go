@@ -20,6 +20,7 @@ const (
 	requestSharedLock    = "select pg_try_advisory_lock_shared($1)"
 	requestUnlock        = "select pg_advisory_unlock($1)"
 	requestSharedUnlock  = "select pg_advisory_unlock_shared($1)"
+	requestIsLocked      = "select count(*) from pg_locks where pid = pg_backend_pid() AND objid=$1"
 )
 
 // Mutex provides a distributed mutex across multiple instances via PostgreSQL database
@@ -107,16 +108,19 @@ func (m *Mutex) checkDBConn() error {
 	return nil
 }
 
-func (m *Mutex) commonLock(request string) (err error) {
-	var result bool
-
+func (m *Mutex) get(dest interface{}, query string) (err error) {
 	err = m.checkDBConn()
 	if err != nil {
 		return err
 	}
 
-	err = m.conn.Get(&result, request, m.lockID)
-	if err != nil {
+	return m.conn.Get(dest, query, m.lockID)
+}
+
+func (m *Mutex) commonLock(request string) (err error) {
+	var result bool
+
+	if err = m.get(&result, request); err != nil {
 		return err
 	}
 
@@ -124,13 +128,7 @@ func (m *Mutex) commonLock(request string) (err error) {
 
 	if !result {
 		for {
-			err := m.checkDBConn()
-			if err != nil {
-				return err
-			}
-
-			err = m.conn.Get(&result, request, m.lockID)
-			if err != nil {
+			if err := m.get(&result, request); err != nil {
 				return err
 			}
 
@@ -165,5 +163,14 @@ func (m *Mutex) commonUnlock(request string) (err error) {
 
 // IsLocked returns locked or not locked mutex
 func (m *Mutex) IsLocked() bool {
-	return m.locked
+	if m.locked {
+		return true
+	}
+
+	var result int
+	if err := m.get(&result, requestIsLocked); err != nil {
+		return true
+	}
+
+	return result != 0
 }
