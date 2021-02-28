@@ -1,4 +1,4 @@
-package crypto
+package random
 
 import (
 	"crypto/rand"
@@ -55,4 +55,19 @@ func (r RuneSequenceType) Random(l int) (seq RuneArray, err error) {
 	}
 
 	return seq, nil
+}
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func GenerateSalt(saltSize int) ([]byte, error) {
+	l := len(letterBytes)
+	b := make([]byte, saltSize)
+	for i := range b {
+		id, err := rand.Int(rand.Reader, big.NewInt(int64(l)))
+		if err != nil {
+			return nil, err
+		}
+		b[i] = letterBytes[id.Int64()]
+	}
+	return b, nil
 }

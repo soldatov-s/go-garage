@@ -1,6 +1,8 @@
-package crypto
+package password
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"golang.org/x/crypto/bcrypt"
+)
 
 const (
 	defaultCost = 8
