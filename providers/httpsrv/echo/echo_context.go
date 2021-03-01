@@ -5,6 +5,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
+	echoSwagger "github.com/soldatov-s/go-swagger/echo-swagger"
+	"github.com/soldatov-s/go-swagger/swagger"
 )
 
 type Context struct {
@@ -25,4 +27,12 @@ func (ec Context) GetLog() *zerolog.Logger {
 
 func (ec Context) GetInt64Param(param string) (int64, error) {
 	return strconv.ParseInt(ec.Param(param), 10, 64)
+}
+
+func (ec Context) IsBuildingSwagger() bool {
+	return echoSwagger.IsBuildingSwagger(ec)
+}
+
+func (ec Context) AddToSwagger() swagger.IMethod {
+	return echoSwagger.AddToSwagger(ec)
 }
