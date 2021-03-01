@@ -12,6 +12,7 @@ go-garage supports:
 * databases:
   * postgresql (with migrations based on [pressly/goose](https://github.com/pressly/goose))
   * clickhouse (with migrations based on [pressly/goose](https://github.com/pressly/goose))
+  * dbgraph
 * caches:
   * redis
 * metrics (each may be extended in user service):
