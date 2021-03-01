@@ -1,4 +1,4 @@
-package mongo
+package dbgraph
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/errors"
 )
 
-const defaultProviderName = "mongo"
+const defaultProviderName = "dbgraph"
 
 // Provider for database mongo
 type Provider struct {
