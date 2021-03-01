@@ -2,6 +2,7 @@ package sql
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/soldatov-s/go-garage/providers/db"
@@ -31,6 +32,22 @@ func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	}
 
 	_, err = conn.Exec(conn.Rebind(utils.JoinStrings(" ", "DELETE FROM", target, "WHERE id=$1")), id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
+	if conn == nil {
+		return db.ErrDBConnNotEstablished
+	}
+
+	now := time.Now().UTC()
+	_, err = conn.Exec(
+		conn.Rebind(utils.JoinStrings(" ", "UPDATE", target, "SET", "updated_at=$1, deleted_at=$2", "WHERE id=$3")), now, now, id,
+	)
 	if err != nil {
 		return err
 	}
