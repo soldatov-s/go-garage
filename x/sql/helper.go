@@ -18,7 +18,7 @@ func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error 
 		return db.ErrDBConnNotEstablished
 	}
 
-	err := conn.Get(data, conn.Rebind(utils.JoinStrings(" ", "SELECT *", target, "WHERE id=$1")), id)
+	err := conn.Get(data, conn.Rebind(utils.JoinStrings(" ", "SELECT * FROM", target, "WHERE id=$1")), id)
 	if err != nil {
 		return err
 	}
