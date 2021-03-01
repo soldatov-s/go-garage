@@ -248,6 +248,8 @@ github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6Mwd
 github.com/soheilhy/cmux v0.1.4/go.mod h1:IM3LyeVVIOuxMH7sFAkER9+bJ4dT7Ms6E4xg4kGIyLM=
 github.com/soldatov-s/go-swagger v1.1.0 h1:6cIuJWaoDXfAJ0a4RdGSjA4EX2V6XHZ14X43sf65Gwg=
 github.com/soldatov-s/go-swagger v1.1.0/go.mod h1:xXleu0BOWHIoFhsjS5UqwGDGvtqH1ygjnA0WA6p/1Kg=
+github.com/soldatov-s/go-swagger v1.2.0 h1:shuM3ikEFagHpPl3suelZ1YIBAWFk9YnoCd6goZJTBk=
+github.com/soldatov-s/go-swagger v1.2.0/go.mod h1:xXleu0BOWHIoFhsjS5UqwGDGvtqH1ygjnA0WA6p/1Kg=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/spf13/afero v1.1.2/go.mod h1:j4pytiNVoe2o6bmDsKpLACNPDBIoEAkihy7loJ1B0CQ=
 github.com/spf13/cast v1.3.0/go.mod h1:Qx5cxh0v+4UWYiBimWS+eyWzqEqokIECu5etghLkUJE=
