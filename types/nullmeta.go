@@ -14,6 +14,25 @@ type NullMeta struct {
 	Valid bool // Valid is true if Map is not NULL
 }
 
+// Init initilze/reinitilize NullMeta
+func (x *NullMeta) Init() {
+	x.Map = make(map[string]interface{})
+	x.Valid = true
+}
+
+// Add adds new item to NullMeta
+func (x *NullMeta) Add(key string, value interface{}) {
+	if !x.Valid {
+		x.Init()
+	}
+	x.Map[key] = value
+}
+
+// Delete deletes item to NullMeta
+func (x *NullMeta) Delete(key string) {
+	delete(x.Map, key)
+}
+
 // Make the NullMeta struct implement the driver.Valuer interface. This method
 // simply returns the JSON-encoded representation of the struct.
 func (x NullMeta) Value() (driver.Value, error) {
