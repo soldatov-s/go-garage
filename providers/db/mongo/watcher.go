@@ -5,6 +5,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
 // Connection watcher goroutine entrypoint.
@@ -68,10 +69,16 @@ func (c *Enity) watcher() bool {
 		c.log.Info().Msg("establishing connection to database...")
 
 		// Connect to database.
+		cs, err := connstring.ParseAndValidate(c.cfg.ComposeDSN())
+		if err != nil {
+			c.log.Fatal().Err(err).Msgf("failed to parse uri")
+		}
+
 		dbConn, err := mongo.Connect(c.ctx, options.Client().ApplyURI(c.cfg.ComposeDSN()))
 		if err == nil {
 			c.log.Info().Msg("database connection established")
 			c.Conn = dbConn
+			c.dbName = cs.Database
 			return false
 		}
 

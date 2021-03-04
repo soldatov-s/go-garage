@@ -16,6 +16,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/logger"
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
 )
@@ -28,11 +29,13 @@ type Enity struct {
 	stats.Service
 
 	// Connection to database
-	Conn *mongo.Client
-	ctx  context.Context
-	log  zerolog.Logger
-	name string
-	cfg  *Config
+	Conn   *mongo.Client
+	ctx    context.Context
+	log    zerolog.Logger
+	dbName string
+	bucket *gridfs.Bucket
+	name   string
+	cfg    *Config
 
 	// Shutdown flags.
 	weAreShuttingDown  bool
@@ -156,6 +159,21 @@ func (c *Enity) GetReadyHandlers(prefix string) stats.MapCheckFunc {
 	return c.ReadyHandlers
 }
 
+func (c *Enity) newBucket() (*gridfs.Bucket, error) {
+	if c.bucket != nil {
+		return c.bucket, nil
+	}
+
+	bucket, err := gridfs.NewBucket(c.Conn.Database(c.dbName))
+	if err != nil {
+		return nil, err
+	}
+
+	c.bucket = bucket
+
+	return c.bucket, nil
+}
+
 func writeToGridFile(fileName string, file multipart.File, gridFile *gridfs.UploadStream) (int, error) {
 	reader := bufio.NewReader(file)
 	defer func() { file.Close() }()
@@ -182,17 +200,21 @@ func writeToGridFile(fileName string, file multipart.File, gridFile *gridfs.Uplo
 	return fileSize, nil
 }
 
-func (c *Enity) WriteMultipart(databasename, fileprefix string, multipartForm *multipart.Form) error {
+// ObjectIDFileName is a map between objectID and file name
+type ObjectIDFileName map[string]string
+
+func (c *Enity) WriteMultipart(fileprefix string, multipartForm *multipart.Form) (ObjectIDFileName, error) {
+	result := make(ObjectIDFileName)
 	for _, fileHeaders := range multipartForm.File {
 		for _, fileHeader := range fileHeaders {
 			file, err := fileHeader.Open()
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			bucket, err := gridfs.NewBucket(c.Conn.Database(databasename))
+			bucket, err := c.newBucket()
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			// this is the name of the file which will be saved in the database
@@ -203,23 +225,47 @@ func (c *Enity) WriteMultipart(databasename, fileprefix string, multipartForm *m
 
 			gridFile, err := bucket.OpenUploadStream(filename)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			fileSize, err := writeToGridFile(fileHeader.Filename, file, gridFile)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			c.log.Debug().Msgf("write file to DB was successful; file size: %d \n", fileSize)
+
+			result[gridFile.FileID.(primitive.ObjectID).Hex()] = filename
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
-func (c *Enity) GetFile(databasename, fileName, fileprefix string) (*bytes.Buffer, int64, error) {
-	bucket, err := gridfs.NewBucket(c.Conn.Database(databasename))
+func (c *Enity) GetFile(fileID string) (*bytes.Buffer, int64, error) {
+	bucket, err := c.newBucket()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var buf bytes.Buffer
+
+	objectID, err := primitive.ObjectIDFromHex(fileID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dStream, err := bucket.DownloadToStream(objectID, &buf)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	c.log.Debug().Msgf("file size to download: %v\n", dStream)
+	return &buf, dStream, nil
+}
+
+func (c *Enity) GetFileByName(fileName, fileprefix string) (*bytes.Buffer, int64, error) {
+	bucket, err := c.newBucket()
 	if err != nil {
 		return nil, 0, err
 	}
@@ -238,4 +284,18 @@ func (c *Enity) GetFile(databasename, fileName, fileprefix string) (*bytes.Buffe
 
 	c.log.Debug().Msgf("file size to download: %v\n", dStream)
 	return &buf, dStream, nil
+}
+
+func (c *Enity) Delete(fileID string) error {
+	bucket, err := c.newBucket()
+	if err != nil {
+		return err
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(fileID)
+	if err != nil {
+		return err
+	}
+
+	return bucket.Delete(objectID)
 }
