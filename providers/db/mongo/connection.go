@@ -286,7 +286,7 @@ func (c *Enity) GetFileByName(fileName, fileprefix string) (*bytes.Buffer, int64
 	return &buf, dStream, nil
 }
 
-func (c *Enity) Delete(fileID string) error {
+func (c *Enity) DeleteFile(fileID string) error {
 	bucket, err := c.newBucket()
 	if err != nil {
 		return err
@@ -298,4 +298,55 @@ func (c *Enity) Delete(fileID string) error {
 	}
 
 	return bucket.Delete(objectID)
+}
+
+func (c *Enity) UpdateFile(fileID, fileprefix string, multipartForm *multipart.Form) error {
+	bucket, err := c.newBucket()
+	if err != nil {
+		return err
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(fileID)
+	if err != nil {
+		return err
+	}
+
+	err = bucket.Delete(objectID)
+	if err != nil {
+		return err
+	}
+
+	for _, fileHeaders := range multipartForm.File {
+		for _, fileHeader := range fileHeaders {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return err
+			}
+
+			bucket, err := c.newBucket()
+			if err != nil {
+				return err
+			}
+
+			// this is the name of the file which will be saved in the database
+			filename := fileHeader.Filename
+			if fileprefix != "" {
+				filename = fileprefix + "_" + filename
+			}
+
+			gridFile, err := bucket.OpenUploadStreamWithID(objectID, filename)
+			if err != nil {
+				return err
+			}
+
+			fileSize, err := writeToGridFile(fileHeader.Filename, file, gridFile)
+			if err != nil {
+				return err
+			}
+
+			c.log.Debug().Msgf("write file to DB was successful; file size: %d \n", fileSize)
+		}
+	}
+
+	return nil
 }
