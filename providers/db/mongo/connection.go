@@ -300,6 +300,20 @@ func (c *Enity) DeleteFile(fileID string) error {
 	return bucket.Delete(objectID)
 }
 
+func (c *Enity) RenameFile(fileID, newFilename string) error {
+	bucket, err := c.newBucket()
+	if err != nil {
+		return err
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(fileID)
+	if err != nil {
+		return err
+	}
+
+	return bucket.Rename(objectID, newFilename)
+}
+
 func (c *Enity) UpdateFile(fileID, fileprefix string, multipartForm *multipart.Form) error {
 	bucket, err := c.newBucket()
 	if err != nil {
