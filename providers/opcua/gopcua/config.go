@@ -9,9 +9,10 @@ import (
 const (
 	// Default DSN and connection parameters that will be passed to
 	// database driver.
-	defaultDSN     = "opc.tcp://localhost:4840"
-	defaultTimeout = 10 * time.Second
-	defaulHandle   = 42
+	defaultDSN      = "opc.tcp://localhost:4840"
+	defaultTimeout  = 10 * time.Second
+	defaulHandle    = 42
+	defaultInterval = 1
 )
 
 // Config represents configuration structure for every
@@ -59,6 +60,10 @@ func (c *Config) SetDefault() *Config {
 
 	if cfgCopy.Interval == 0 {
 		cfgCopy.Interval = opcua.DefaultSubscriptionInterval
+	}
+
+	if cfgCopy.Interval == 0 {
+		cfgCopy.Interval = defaultInterval
 	}
 
 	if cfgCopy.Handle == 0 {

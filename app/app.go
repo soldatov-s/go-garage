@@ -14,6 +14,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/providers/httpsrv"
 	"github.com/soldatov-s/go-garage/providers/logger"
+	"github.com/soldatov-s/go-garage/providers/opcua"
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
 )
@@ -31,7 +32,7 @@ func Loop(ctx context.Context) {
 	go func() {
 		<-closeSignal
 		_ = Shutdown(ctx)
-		log.Info().Msg("Exit program")
+		log.Info().Msg("exit service")
 		close(exit)
 	}()
 
@@ -121,7 +122,7 @@ func StartStatistics(ctx context.Context) error {
 }
 
 func providersOrder() []string {
-	return []string{db.ProvidersName, cache.ProvidersName, httpsrv.ProvidersName}
+	return []string{db.ProvidersName, cache.ProvidersName, httpsrv.ProvidersName, opcua.ProvidersName}
 }
 
 func CreateAppContext(ctx context.Context) context.Context {

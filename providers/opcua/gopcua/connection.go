@@ -18,6 +18,13 @@ import (
 	"github.com/soldatov-s/go-garage/utils"
 )
 
+// SubscribeResult is a struct of subscribtion
+type SubscribeResult struct {
+	NotifyCh        chan *opcua.PublishNotificationData
+	EventFieldNames []string
+	Sub             *opcua.Subscription
+}
+
 // Enity is a connection controlling structure. It controls
 // connection, asynchronous queue and everything that related to
 // specified connection.
@@ -26,6 +33,8 @@ type Enity struct {
 	stats.Service
 	// OPC UA connection
 	Conn *opcua.Client
+	// Subscriptions
+	Subscriptions map[string]*SubscribeResult
 
 	ctx  context.Context
 	log  zerolog.Logger
@@ -54,6 +63,7 @@ func NewEnity(ctx context.Context, name string, cfg interface{}) (*Enity, error)
 		log:                logger.Get(ctx).GetLogger(db.ProvidersName, nil).With().Str("connection", name).Logger(),
 		cfg:                cfg.(*Config).SetDefault(),
 		connWatcherStopped: true,
+		Subscriptions:      make(map[string]*SubscribeResult),
 	}
 
 	conn.log.Info().Msgf("initializing enity " + name + "...")
@@ -75,6 +85,11 @@ func (c *Enity) Shutdown() error {
 			time.Sleep(time.Millisecond * 500)
 		}
 	} else {
+		for _, v := range c.Subscriptions {
+			if err := v.Sub.Cancel(); err != nil {
+				return err
+			}
+		}
 		c.shutdown()
 	}
 
@@ -114,12 +129,6 @@ func (c *Enity) WaitForEstablishing() {
 	}
 }
 
-type SubscribeResult struct {
-	NotifyCh        chan *opcua.PublishNotificationData
-	EventFieldNames []string
-	Sub             *opcua.Subscription
-}
-
 func (c *Enity) SubscribeEvent(nodeID string) (result *SubscribeResult, err error) {
 	result = &SubscribeResult{}
 	result.NotifyCh = make(chan *opcua.PublishNotificationData)
@@ -144,6 +153,7 @@ func (c *Enity) SubscribeEvent(nodeID string) (result *SubscribeResult, err erro
 		return nil, err
 	}
 
+	c.Subscriptions[nodeID] = result
 	return result, nil
 }
 
@@ -170,6 +180,7 @@ func (c *Enity) SubscribeValues(nodeID string) (result *SubscribeResult, err err
 		return nil, err
 	}
 
+	c.Subscriptions[nodeID] = result
 	return result, nil
 }
 
