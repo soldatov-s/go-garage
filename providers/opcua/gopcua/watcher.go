@@ -78,7 +78,7 @@ func (c *Enity) watcher() bool {
 			c.log.Fatal().Err(err).Msg("failed to find suitable endpoint")
 		}
 
-		c.log.Info().Msgf("*", ep.SecurityPolicyURI, ep.SecurityMode)
+		c.log.Info().Msgf("%s %s", ep.SecurityPolicyURI, ep.SecurityMode)
 
 		opts := []opcua.Option{
 			opcua.SecurityPolicy(c.cfg.SecurityPolicy),

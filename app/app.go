@@ -131,7 +131,7 @@ func CreateAppContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-// Start all providers
+// Start all providers and domains
 func Start(ctx context.Context) error {
 	provs := providers.Get(ctx)
 	for _, v := range providersOrder() {
@@ -142,11 +142,41 @@ func Start(ctx context.Context) error {
 		}
 	}
 
+	var err error
+	doms := domains.Get(ctx)
+	doms.Range(func(k, v interface{}) bool {
+		if domain, ok := v.(domains.IBaseDomainStarter); ok {
+			if err = domain.Start(); err != nil {
+				return false
+			}
+		}
+		return true
+	})
+
+	if err != nil {
+		return err
+	}
+
 	return StartStatistics(ctx)
 }
 
-// Shutdown all providers
+// Shutdown all domains and providers
 func Shutdown(ctx context.Context) error {
+	var err error
+	doms := domains.Get(ctx)
+	doms.Range(func(k, v interface{}) bool {
+		if domain, ok := v.(domains.IBaseDomainShutdowner); ok {
+			if err = domain.Shutdown(); err != nil {
+				return false
+			}
+		}
+		return true
+	})
+
+	if err != nil {
+		return err
+	}
+
 	provs := providers.Get(ctx)
 	for _, v := range utils.ReverseStringSlice(providersOrder()) {
 		if p, ok := provs.Load(v); ok {
