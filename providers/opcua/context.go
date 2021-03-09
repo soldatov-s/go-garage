@@ -7,13 +7,13 @@ import (
 )
 
 func Registrate(ctx context.Context) context.Context {
-	return providers.RegistrateByName(ctx, ProvidersName, NewDatabases(ctx))
+	return providers.RegistrateByName(ctx, ProvidersName, NewOpcua(ctx))
 }
 
-func Get(ctx context.Context) *Databases {
+func Get(ctx context.Context) *Opcua {
 	v := providers.GetByName(ctx, ProvidersName)
 	if v != nil {
-		return providers.GetByName(ctx, ProvidersName).(*Databases)
+		return providers.GetByName(ctx, ProvidersName).(*Opcua)
 	}
 	return nil
 }
