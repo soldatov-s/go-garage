@@ -158,7 +158,7 @@ func (c *Enity) subscribe(options *SubscribeOptions) {
 			continue
 		}
 		if options != nil {
-			if err1 := options.ConsumeHndl(res.Value); err1 != nil {
+			if err1 := options.ConsumeHndl(res); err1 != nil {
 				c.log.Error().Msgf("can't consume. error: %s", err1)
 				continue
 			}
