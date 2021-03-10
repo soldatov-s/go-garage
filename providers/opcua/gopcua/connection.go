@@ -25,6 +25,20 @@ type SubscribeResult struct {
 	Sub             *opcua.Subscription
 }
 
+func (s *SubscribeResult) AppendEventFieldNames(eventFieldNames []string) {
+	for _, v1 := range eventFieldNames {
+		finded := false
+		for _, v2 := range s.EventFieldNames {
+			if v1 == v2 {
+				finded = true
+			}
+		}
+		if !finded {
+			s.EventFieldNames = append(s.EventFieldNames, v1)
+		}
+	}
+}
+
 // Enity is a connection controlling structure. It controls
 // connection, asynchronous queue and everything that related to
 // specified connection.
@@ -33,8 +47,8 @@ type Enity struct {
 	stats.Service
 	// OPC UA connection
 	Conn *opcua.Client
-	// Subscriptions
-	Subscriptions map[string]*SubscribeResult
+	// Subscription
+	Subscription *SubscribeResult
 
 	ctx  context.Context
 	log  zerolog.Logger
@@ -63,7 +77,6 @@ func NewEnity(ctx context.Context, name string, cfg interface{}) (*Enity, error)
 		log:                logger.Get(ctx).GetLogger(db.ProvidersName, nil).With().Str("connection", name).Logger(),
 		cfg:                cfg.(*Config).SetDefault(),
 		connWatcherStopped: true,
-		Subscriptions:      make(map[string]*SubscribeResult),
 	}
 
 	conn.log.Info().Msgf("initializing enity " + name + "...")
@@ -85,10 +98,8 @@ func (c *Enity) Shutdown() error {
 			time.Sleep(time.Millisecond * 500)
 		}
 	} else {
-		for _, v := range c.Subscriptions {
-			if err := v.Sub.Cancel(); err != nil {
-				return err
-			}
+		if c.Subscription != nil {
+			c.Subscription.Sub.Cancel()
 		}
 		c.shutdown()
 	}
@@ -129,59 +140,68 @@ func (c *Enity) WaitForEstablishing() {
 	}
 }
 
-func (c *Enity) SubscribeEvent(nodeID string) (result *SubscribeResult, err error) {
-	result = &SubscribeResult{}
+func (c *Enity) initSubscription() error {
+	if c.Subscription != nil {
+		return nil
+	}
+
+	result := &SubscribeResult{}
 	result.NotifyCh = make(chan *opcua.PublishNotificationData)
+
+	var err error
 
 	result.Sub, err = c.Conn.Subscribe(&opcua.SubscriptionParameters{
 		Interval: c.cfg.Interval,
 	}, result.NotifyCh)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	log.Printf("created subscription with id %v", result.Sub.SubscriptionID)
 
+	c.Subscription = result
+	return nil
+}
+
+func (c *Enity) SubscribeEvent(nodeID string) error {
+	if err := c.initSubscription(); err != nil {
+		return err
+	}
+
 	uaid, err := ua.ParseNodeID(nodeID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var miCreateRequest *ua.MonitoredItemCreateRequest
-	miCreateRequest, result.EventFieldNames = eventRequest(uaid, c.cfg.Handle)
-	res, err := result.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
+	var eventFieldNames []string
+	miCreateRequest, eventFieldNames = eventRequest(uaid, c.cfg.Handle)
+	res, err := c.Subscription.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
 	if err != nil || res.Results[0].StatusCode != ua.StatusOK {
-		return nil, err
+		return err
 	}
 
-	c.Subscriptions[nodeID] = result
-	return result, nil
+	c.Subscription.AppendEventFieldNames(eventFieldNames)
+
+	return nil
 }
 
-func (c *Enity) SubscribeValues(nodeID string) (result *SubscribeResult, err error) {
-	result = &SubscribeResult{}
-	result.NotifyCh = make(chan *opcua.PublishNotificationData)
-
-	result.Sub, err = c.Conn.Subscribe(&opcua.SubscriptionParameters{
-		Interval: c.cfg.Interval,
-	}, result.NotifyCh)
-	if err != nil {
-		return nil, err
+func (c *Enity) SubscribeValues(nodeID string) error {
+	if err := c.initSubscription(); err != nil {
+		return err
 	}
-	log.Printf("created subscription with id %v", result.Sub.SubscriptionID)
 
 	uaid, err := ua.ParseNodeID(nodeID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	miCreateRequest := valueRequest(uaid, c.cfg.Handle)
-	res, err := result.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
+	res, err := c.Subscription.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
 	if err != nil || res.Results[0].StatusCode != ua.StatusOK {
-		return nil, err
+		return err
 	}
 
-	c.Subscriptions[nodeID] = result
-	return result, nil
+	return nil
 }
 
 func valueRequest(nodeID *ua.NodeID, handle uint32) *ua.MonitoredItemCreateRequest {
