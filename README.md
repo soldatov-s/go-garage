@@ -17,14 +17,14 @@ go-garage supports:
 * caches:
   * redis
 * opcua:
-  * gopcua
+  * gopcua (gopcua/opcua)[https://github.com/gopcua/opcua]
 * metrics (each may be extended in user service):
   * alive handler
   * ready handler (includes communicate with databases and cache)
   * prometheus metrics (includes communicate with databases and cache, current cache size, database metrics from sql.DBStats)
 * config parser based on [vrischmann/envconfig](github.com/vrischmann/envconfig)
 * http servers (with swagger):
-  * router [labstack/echo](github.com/labstack/echo)
+  * router (labstack/echo)(github.com/labstack/echo)
 * logger based (rs/zerolog)[github.com/rs/zerolog] 
 * http clients pool
 * service meta informations
