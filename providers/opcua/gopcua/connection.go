@@ -140,6 +140,32 @@ func (c *Enity) WaitForEstablishing() {
 	}
 }
 
+// Subscribe to channel for receiving message
+func (c *Enity) Subscribe(options *SubscribeOptions) error {
+	if err := c.initSubscription(); err != nil {
+		return err
+	}
+
+	go c.subscribe(options)
+
+	return nil
+}
+
+func (c *Enity) subscribe(options *SubscribeOptions) {
+	for res := range c.Subscription.NotifyCh {
+		if res.Error != nil {
+			c.log.Error().Err(res.Error).Msgf("failed to get notification")
+			continue
+		}
+		if options != nil {
+			if err1 := options.ConsumeHndl(res.Value); err1 != nil {
+				c.log.Error().Msgf("can't consume. error: %s", err1)
+				continue
+			}
+		}
+	}
+}
+
 func (c *Enity) initSubscription() error {
 	if c.Subscription != nil {
 		return nil
@@ -163,10 +189,6 @@ func (c *Enity) initSubscription() error {
 }
 
 func (c *Enity) SubscribeEvent(nodeID string) error {
-	if err := c.initSubscription(); err != nil {
-		return err
-	}
-
 	uaid, err := ua.ParseNodeID(nodeID)
 	if err != nil {
 		return err
@@ -186,10 +208,6 @@ func (c *Enity) SubscribeEvent(nodeID string) error {
 }
 
 func (c *Enity) SubscribeValues(nodeID string) error {
-	if err := c.initSubscription(); err != nil {
-		return err
-	}
-
 	uaid, err := ua.ParseNodeID(nodeID)
 	if err != nil {
 		return err
