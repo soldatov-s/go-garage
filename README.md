@@ -16,6 +16,8 @@ go-garage supports:
   * dbgraph
 * caches:
   * redis
+* opcua:
+  * gopcua
 * metrics (each may be extended in user service):
   * alive handler
   * ready handler (includes communicate with databases and cache)
