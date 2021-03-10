@@ -62,8 +62,12 @@ func (c *Config) SetDefault() *Config {
 		cfgCopy.Interval = opcua.DefaultSubscriptionInterval
 	}
 
-	if cfgCopy.Interval == 0 {
-		cfgCopy.Interval = defaultInterval
+	if cfgCopy.SecurityMode == "" {
+		cfgCopy.SecurityMode = "None"
+	}
+
+	if cfgCopy.SecurityPolicy == "" {
+		cfgCopy.SecurityPolicy = "None"
 	}
 
 	if cfgCopy.Handle == 0 {
