@@ -2,13 +2,11 @@ package gopcua
 
 import (
 	"context"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/gopcua/opcua"
-	"github.com/gopcua/opcua/id"
-	"github.com/gopcua/opcua/ua"
+	"github.com/gopcua/opcua/monitor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/providers/db"
@@ -17,27 +15,6 @@ import (
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
 )
-
-// SubscribeResult is a struct of subscribtion
-type SubscribeResult struct {
-	NotifyCh        chan *opcua.PublishNotificationData
-	EventFieldNames []string
-	Sub             *opcua.Subscription
-}
-
-func (s *SubscribeResult) AppendEventFieldNames(eventFieldNames []string) {
-	for _, v1 := range eventFieldNames {
-		finded := false
-		for _, v2 := range s.EventFieldNames {
-			if v1 == v2 {
-				finded = true
-			}
-		}
-		if !finded {
-			s.EventFieldNames = append(s.EventFieldNames, v1)
-		}
-	}
-}
 
 // Enity is a connection controlling structure. It controls
 // connection, asynchronous queue and everything that related to
@@ -48,12 +25,13 @@ type Enity struct {
 	// OPC UA connection
 	Conn *opcua.Client
 	// Subscription
-	Subscription *SubscribeResult
+	Subscription *monitor.Subscription
 
 	ctx  context.Context
 	log  zerolog.Logger
 	name string
 	cfg  *Config
+	ch   chan *monitor.DataChangeMessage
 
 	// Shutdown flags.
 	weAreShuttingDown  bool
@@ -99,7 +77,7 @@ func (c *Enity) Shutdown() error {
 		}
 	} else {
 		if c.Subscription != nil {
-			c.Subscription.Sub.Cancel()
+			c.Subscription.Unsubscribe()
 		}
 		c.shutdown()
 	}
@@ -152,7 +130,7 @@ func (c *Enity) Subscribe(options *SubscribeOptions) error {
 }
 
 func (c *Enity) subscribe(options *SubscribeOptions) {
-	for res := range c.Subscription.NotifyCh {
+	for res := range c.ch {
 		if res.Error != nil {
 			c.log.Error().Err(res.Error).Msgf("failed to get notification")
 			continue
@@ -171,133 +149,25 @@ func (c *Enity) initSubscription() error {
 		return nil
 	}
 
-	result := &SubscribeResult{}
-	result.NotifyCh = make(chan *opcua.PublishNotificationData)
-
-	var err error
-
-	result.Sub, err = c.Conn.Subscribe(&opcua.SubscriptionParameters{
-		Interval: c.cfg.Interval,
-	}, result.NotifyCh)
-	if err != nil {
-		return err
-	}
-	log.Printf("created subscription with id %v", result.Sub.SubscriptionID)
-
-	c.Subscription = result
-	return nil
-}
-
-func (c *Enity) SubscribeEvent(nodeID string) error {
-	uaid, err := ua.ParseNodeID(nodeID)
+	m, err := monitor.NewNodeMonitor(c.Conn)
 	if err != nil {
 		return err
 	}
 
-	var miCreateRequest *ua.MonitoredItemCreateRequest
-	var eventFieldNames []string
-	miCreateRequest, eventFieldNames = eventRequest(uaid, c.cfg.Handle)
-	res, err := c.Subscription.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
-	if err != nil || res.Results[0].StatusCode != ua.StatusOK {
-		return err
-	}
-
-	c.Subscription.AppendEventFieldNames(eventFieldNames)
-
-	return nil
-}
-
-func (c *Enity) SubscribeValues(nodeID string) error {
-	uaid, err := ua.ParseNodeID(nodeID)
+	ch := make(chan *monitor.DataChangeMessage, 16)
+	sub, err := m.ChanSubscribe(c.ctx, &opcua.SubscriptionParameters{Interval: c.cfg.Interval}, ch)
 	if err != nil {
 		return err
 	}
 
-	miCreateRequest := valueRequest(uaid, c.cfg.Handle)
-	res, err := c.Subscription.Sub.Monitor(ua.TimestampsToReturnBoth, miCreateRequest)
-	if err != nil || res.Results[0].StatusCode != ua.StatusOK {
-		return err
-	}
+	c.log.Info().Msgf("created subscription with id %d", sub.SubscriptionID())
 
+	c.Subscription = sub
 	return nil
 }
 
-func valueRequest(nodeID *ua.NodeID, handle uint32) *ua.MonitoredItemCreateRequest {
-	return opcua.NewMonitoredItemCreateRequestWithDefaults(nodeID, ua.AttributeIDValue, handle)
-}
-
-func eventRequest(nodeID *ua.NodeID, handle uint32) (*ua.MonitoredItemCreateRequest, []string) {
-	fieldNames := []string{"EventId", "EventType", "Severity", "Time", "Message"}
-	selects := make([]*ua.SimpleAttributeOperand, len(fieldNames))
-
-	for i, name := range fieldNames {
-		selects[i] = &ua.SimpleAttributeOperand{
-			TypeDefinitionID: ua.NewNumericNodeID(0, id.BaseEventType),
-			BrowsePath:       []*ua.QualifiedName{{NamespaceIndex: 0, Name: name}},
-			AttributeID:      ua.AttributeIDValue,
-		}
-	}
-
-	wheres := &ua.ContentFilter{
-		Elements: []*ua.ContentFilterElement{
-			{
-				FilterOperator: ua.FilterOperatorGreaterThanOrEqual,
-				FilterOperands: []*ua.ExtensionObject{
-					{
-						EncodingMask: 1,
-						TypeID: &ua.ExpandedNodeID{
-							NodeID: ua.NewNumericNodeID(0, id.SimpleAttributeOperand_Encoding_DefaultBinary),
-						},
-						Value: ua.SimpleAttributeOperand{
-							TypeDefinitionID: ua.NewNumericNodeID(0, id.BaseEventType),
-							BrowsePath:       []*ua.QualifiedName{{NamespaceIndex: 0, Name: "Severity"}},
-							AttributeID:      ua.AttributeIDValue,
-						},
-					},
-					{
-						EncodingMask: 1,
-						TypeID: &ua.ExpandedNodeID{
-							NodeID: ua.NewNumericNodeID(0, id.LiteralOperand_Encoding_DefaultBinary),
-						},
-						Value: ua.LiteralOperand{
-							Value: ua.MustVariant(uint16(0)),
-						},
-					},
-				},
-			},
-		},
-	}
-
-	filter := ua.EventFilter{
-		SelectClauses: selects,
-		WhereClause:   wheres,
-	}
-
-	filterExtObj := ua.ExtensionObject{
-		EncodingMask: ua.ExtensionObjectBinary,
-		TypeID: &ua.ExpandedNodeID{
-			NodeID: ua.NewNumericNodeID(0, id.EventFilter_Encoding_DefaultBinary),
-		},
-		Value: filter,
-	}
-
-	req := &ua.MonitoredItemCreateRequest{
-		ItemToMonitor: &ua.ReadValueID{
-			NodeID:       nodeID,
-			AttributeID:  ua.AttributeIDEventNotifier,
-			DataEncoding: &ua.QualifiedName{},
-		},
-		MonitoringMode: ua.MonitoringModeReporting,
-		RequestedParameters: &ua.MonitoringParameters{
-			ClientHandle:     handle,
-			DiscardOldest:    true,
-			Filter:           &filterExtObj,
-			QueueSize:        10,
-			SamplingInterval: 1.0,
-		},
-	}
-
-	return req, fieldNames
+func (c *Enity) SubscribeNodeID(nodeID string) error {
+	return c.Subscription.AddNodes(nodeID)
 }
 
 // GetMetrics return map of the metrics from database connection

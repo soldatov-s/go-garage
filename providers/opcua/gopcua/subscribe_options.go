@@ -1,9 +1,11 @@
 package gopcua
 
-import "github.com/gopcua/opcua"
+import (
+	"github.com/gopcua/opcua/monitor"
+)
 
 // CosumeHandler is handler for consume messages
-type CosumeHandler func(*opcua.PublishNotificationData) error
+type CosumeHandler func(*monitor.DataChangeMessage) error
 
 // SubscribeOptions describes struct with options for subscriber
 type SubscribeOptions struct {
