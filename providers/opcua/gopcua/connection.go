@@ -141,6 +141,7 @@ func (c *Enity) subscribe(options *SubscribeOptions) {
 				continue
 			}
 		}
+		time.Sleep(c.cfg.Interval)
 	}
 }
 
@@ -154,8 +155,8 @@ func (c *Enity) initSubscription() error {
 		return err
 	}
 
-	ch := make(chan *monitor.DataChangeMessage, 16)
-	sub, err := m.ChanSubscribe(c.ctx, &opcua.SubscriptionParameters{Interval: c.cfg.Interval}, ch)
+	c.ch = make(chan *monitor.DataChangeMessage, 16)
+	sub, err := m.ChanSubscribe(c.ctx, &opcua.SubscriptionParameters{Interval: c.cfg.Interval}, c.ch)
 	if err != nil {
 		return err
 	}
@@ -167,6 +168,7 @@ func (c *Enity) initSubscription() error {
 }
 
 func (c *Enity) SubscribeNodeID(nodeID string) error {
+	c.log.Debug().Msgf("subscribe nodeID %s", nodeID)
 	return c.Subscription.AddNodes(nodeID)
 }
 
