@@ -9,10 +9,10 @@ import (
 const (
 	// Default DSN and connection parameters that will be passed to
 	// database driver.
-	defaultDSN      = "opc.tcp://localhost:4840"
-	defaultTimeout  = 10 * time.Second
-	defaulHandle    = 42
-	defaultInterval = 1
+	defaultDSN       = "opc.tcp://localhost:4840"
+	defaultTimeout   = 10 * time.Second
+	defaulHandle     = 42
+	defaultQueueSzie = 1024
 )
 
 // Config represents configuration structure for every
@@ -38,6 +38,8 @@ type Config struct {
 	Interval time.Duration `envconfig:"optional"`
 	// Handle is a client gandle
 	Handle uint32 `envconfig:"optional"`
+	// Queue size
+	QueueSize int `envconfig:"optional"`
 	// StartWatcher indicates to connection controller that it should
 	// also start asynchronous connection watcher.
 	StartWatcher bool `envconfig:"optional"`
@@ -72,6 +74,10 @@ func (c *Config) SetDefault() *Config {
 
 	if cfgCopy.Handle == 0 {
 		cfgCopy.Handle = defaulHandle
+	}
+
+	if cfgCopy.QueueSize == 0 {
+		cfgCopy.QueueSize = defaultQueueSzie
 	}
 
 	if cfgCopy.Timeout == 0 {

@@ -155,7 +155,7 @@ func (c *Enity) initSubscription() error {
 		return err
 	}
 
-	c.ch = make(chan *monitor.DataChangeMessage, 16)
+	c.ch = make(chan *monitor.DataChangeMessage, c.cfg.QueueSize)
 	sub, err := m.ChanSubscribe(c.ctx, &opcua.SubscriptionParameters{Interval: c.cfg.Interval}, c.ch)
 	if err != nil {
 		return err
