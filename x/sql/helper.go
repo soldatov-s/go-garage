@@ -1,18 +1,27 @@
 package sql
 
 import (
+	"context"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	gogarage "github.com/soldatov-s/go-garage"
 	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/utils"
 )
 
+const (
+	HelperItem gogarage.GarageItem = "sqlhelper"
+)
+
+// RequestParameter return SQL params for struct
 type RequestParameter interface {
 	SQLParamsRequest() []string
 }
 
+// SelectByID select data from target by id
 func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
@@ -26,6 +35,7 @@ func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error 
 	return nil
 }
 
+// HardDeleteByID hard deletes data from target by id
 func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
@@ -39,6 +49,8 @@ func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	return nil
 }
 
+// SoftDeleteByID soft deletes data from target by id
+// It marks data as deleted by changing deleted_at field
 func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
@@ -55,6 +67,7 @@ func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	return nil
 }
 
+// InsertInto inserts new data to target
 func InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
 	if conn == nil {
 		return nil, db.ErrDBConnNotEstablished
@@ -73,9 +86,11 @@ func InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{
 	return data, err
 }
 
-func Update(conn *sqlx.DB, target string, writeData RequestParameter) (interface{}, error) {
-	query := make([]string, 0, len(writeData.SQLParamsRequest()))
-	for _, param := range writeData.SQLParamsRequest() {
+// Update data in target by id
+// ID taken from passed data
+func Update(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
+	query := make([]string, 0, len(data.SQLParamsRequest()))
+	for _, param := range data.SQLParamsRequest() {
 		query = append(query, param+"=:"+param)
 	}
 
@@ -86,10 +101,69 @@ func Update(conn *sqlx.DB, target string, writeData RequestParameter) (interface
 	_, err := conn.NamedExec(
 		conn.Rebind(utils.JoinStrings(" ", "UPDATE "+target+" SET ", strings.Join(query, ", "),
 			"WHERE id=:id")),
-		writeData)
+		data)
 	if err != nil {
 		return nil, err
 	}
 
-	return writeData, nil
+	return data, nil
+}
+
+type Helper struct {
+	requestParamsCache map[string][]string
+}
+
+func (h *Helper) Registrate(ctx context.Context) (context.Context, *Helper) {
+	return context.WithValue(ctx, HelperItem, h), h
+}
+
+func Get(ctx context.Context) *Helper {
+	if v := ctx.Value(HelperItem); v != nil {
+		return v.(*Helper)
+	}
+	return nil
+}
+
+// RequestParams returns sql request parameters for data
+func (h *Helper) RequestParams(data interface{}) []string {
+	if h.requestParamsCache == nil {
+		h.requestParamsCache = make(map[string][]string)
+	}
+
+	typeName := reflect.TypeOf(data).String()
+	if v, ok := h.requestParamsCache[typeName]; ok {
+		return v
+	}
+
+	val := reflect.ValueOf(data).Elem()
+	res := make([]string, 0, val.NumField())
+	for i := 0; i < val.NumField(); i++ {
+		typeField := val.Type().Field(i)
+		res = append(res, typeField.Tag.Get("db"))
+	}
+
+	h.requestParamsCache[typeName] = res
+
+	return res
+}
+
+// RequestParamsWithout returns sql request parameters for data without
+// removed fields
+func (h *Helper) RequestParamsWithout(data interface{}, remove []string) []string {
+	sqlPrams := h.RequestParams(data)
+	res := make([]string, 0, len(sqlPrams))
+	for _, v := range sqlPrams {
+		find := false
+		for _, vv := range remove {
+			if v == vv {
+				find = true
+				break
+			}
+		}
+		if find {
+			continue
+		}
+		res = append(res, v)
+	}
+	return res
 }
