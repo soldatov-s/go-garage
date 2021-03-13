@@ -17,6 +17,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/opcua"
 	"github.com/soldatov-s/go-garage/providers/stats"
 	"github.com/soldatov-s/go-garage/utils"
+	"github.com/soldatov-s/go-garage/x/sql"
 )
 
 // Loop is application loop, exit on SIGTERM
@@ -128,6 +129,7 @@ func providersOrder() []string {
 func CreateAppContext(ctx context.Context) context.Context {
 	ctx, _ = providers.Create(ctx)
 	ctx, _ = domains.Create(ctx)
+	ctx, _ = sql.Create(ctx)
 	return ctx
 }
 
