@@ -113,7 +113,8 @@ type Helper struct {
 	requestParamsCache map[string][]string
 }
 
-func (h *Helper) Registrate(ctx context.Context) (context.Context, *Helper) {
+func Registrate(ctx context.Context) (context.Context, *Helper) {
+	h := &Helper{}
 	return context.WithValue(ctx, HelperItem, h), h
 }
 
