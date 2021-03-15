@@ -150,7 +150,7 @@ func (h *Helper) RequestParams(data interface{}) []string {
 
 // RequestParamsWithout returns sql request parameters for data without
 // removed fields
-func (h *Helper) RequestParamsWithout(data interface{}, remove []string) []string {
+func (h *Helper) RequestParamsWithout(data interface{}, remove ...string) []string {
 	sqlPrams := h.RequestParams(data)
 	res := make([]string, 0, len(sqlPrams))
 	for _, v := range sqlPrams {
