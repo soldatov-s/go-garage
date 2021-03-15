@@ -146,7 +146,9 @@ func (h *Helper) requestParams(res *[]string, data interface{}) {
 		if Types.Field(i).Anonymous {
 			h.requestParams(res, Values.Field(i).Interface())
 		}
-		*res = append(*res, Types.Field(i).Tag.Get("db"))
+		if tag := Types.Field(i).Tag.Get("db"); tag != "" {
+			*res = append(*res, tag)
+		}
 	}
 }
 
