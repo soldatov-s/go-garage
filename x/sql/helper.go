@@ -123,6 +123,33 @@ func Get(ctx context.Context) *Helper {
 	return nil
 }
 
+func valueFromPtr(s interface{}) interface{} {
+	if s == nil {
+		return nil
+	}
+
+	if reflect.TypeOf(s).Kind() == reflect.Ptr {
+		if !reflect.ValueOf(s).IsNil() {
+			return valueFromPtr(reflect.ValueOf(s).Elem().Interface())
+		}
+		return valueFromPtr(reflect.New(reflect.TypeOf(s).Elem()).Interface())
+	}
+
+	return s
+}
+
+func (h *Helper) requestParams(res *[]string, data interface{}) {
+	Types := reflect.TypeOf(data)
+	Values := reflect.ValueOf(data)
+
+	for i := 0; i < Types.NumField(); i++ {
+		if Types.Field(i).Anonymous {
+			h.requestParams(res, Values.Field(i).Interface())
+		}
+		*res = append(*res, Types.Field(i).Tag.Get("db"))
+	}
+}
+
 // RequestParams returns sql request parameters for data
 func (h *Helper) RequestParams(data interface{}) []string {
 	if h.requestParamsCache == nil {
@@ -134,13 +161,9 @@ func (h *Helper) RequestParams(data interface{}) []string {
 		return v
 	}
 
-	val := reflect.ValueOf(data).Elem()
-	res := make([]string, 0, val.NumField())
-	for i := 0; i < val.NumField(); i++ {
-		typeField := val.Type().Field(i)
-		res = append(res, typeField.Tag.Get("db"))
-	}
-
+	Values := reflect.ValueOf(data).Elem()
+	res := make([]string, 0, Values.NumField())
+	h.requestParams(&res, valueFromPtr(data))
 	h.requestParamsCache[typeName] = res
 
 	return res
