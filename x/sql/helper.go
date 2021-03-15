@@ -18,7 +18,7 @@ const (
 
 // RequestParameter return SQL params for struct
 type RequestParameter interface {
-	SQLParamsRequest() []string
+	SQLParamsRequest(ctx context.Context) []string
 }
 
 // SelectByID select data from target by id
@@ -68,14 +68,14 @@ func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 }
 
 // InsertInto inserts new data to target
-func InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
+func InsertInto(ctx context.Context, conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
 	if conn == nil {
 		return nil, db.ErrDBConnNotEstablished
 	}
 
 	stmt, err := conn.PrepareNamed(
-		conn.Rebind(utils.JoinStrings(" ", "INSERT INTO", target, "("+strings.Join(data.SQLParamsRequest(), ", ")+")",
-			"VALUES", "("+":"+strings.Join(data.SQLParamsRequest(), ", :")+") RETURNING *")))
+		conn.Rebind(utils.JoinStrings(" ", "INSERT INTO", target, "("+strings.Join(data.SQLParamsRequest(ctx), ", ")+")",
+			"VALUES", "("+":"+strings.Join(data.SQLParamsRequest(ctx), ", :")+") RETURNING *")))
 	if err != nil {
 		return nil, err
 	}
@@ -88,11 +88,9 @@ func InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{
 
 // Update data in target by id
 // ID taken from passed data
-func Update(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
-	query := make([]string, 0, len(data.SQLParamsRequest()))
-	for _, param := range data.SQLParamsRequest() {
-		query = append(query, param+"=:"+param)
-	}
+func Update(ctx context.Context, conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
+	h := Get(ctx)
+	query := h.BuildQuery(data)
 
 	if conn == nil {
 		return nil, db.ErrDBConnNotEstablished
@@ -167,4 +165,13 @@ func (h *Helper) RequestParamsWithout(data interface{}, remove ...string) []stri
 		res = append(res, v)
 	}
 	return res
+}
+
+func (h *Helper) BuildQuery(data interface{}) []string {
+	sqlPrams := h.RequestParams(data)
+	query := make([]string, 0, len(sqlPrams))
+	for _, param := range sqlPrams {
+		query = append(query, param+"=:"+param)
+	}
+	return query
 }
