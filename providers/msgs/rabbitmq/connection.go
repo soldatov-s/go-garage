@@ -243,7 +243,7 @@ func (conn *Enity) runConsumer() (<-chan amqp.Delivery, error) {
 	return msg, nil
 }
 
-func (conn *Enity) startConsume(options *SubscribeOptions) {
+func (conn *Enity) startConsume(options SubscribeOptions) {
 	var msg <-chan amqp.Delivery
 	var err error
 
@@ -266,20 +266,16 @@ func (conn *Enity) startConsume(options *SubscribeOptions) {
 		select {
 		case <-conn.consumer.shutdownConsumer:
 			conn.log.Info().Msg("Consumer shut down")
-			if options.Shutdownhndl != nil {
-				options.Shutdownhndl()
-			}
+			options.Shutdown()
 			return
 		default:
 			for d := range msg {
 				conn.log.Debug().Msgf("Got new event %+v", string(d.Body))
-				if options.ConsumeHndl != nil {
-					if err1 := options.ConsumeHndl(d.Body); err1 != nil {
-						conn.log.Error().Msgf("Can't consume. error: %s", err1)
-						continue
-					}
-					_ = d.Ack(true)
+				if err1 := options.Consume(d.Body); err1 != nil {
+					conn.log.Error().Msgf("Can't consume. error: %s", err1)
+					continue
 				}
+				_ = d.Ack(true)
 			}
 		}
 	}
@@ -319,13 +315,13 @@ func (conn *Enity) SendMessage(message interface{}) error {
 }
 
 // Subscribe to channel for receiving message
-func (conn *Enity) Subscribe(options *SubscribeOptions) error {
+func (conn *Enity) Subscribe(options SubscribeOptions) error {
 	go conn.subscribe(options)
 
 	return nil
 }
 
-func (conn *Enity) subscribe(options *SubscribeOptions) {
+func (conn *Enity) subscribe(options SubscribeOptions) {
 	if conn.consumer == nil {
 		return
 	}

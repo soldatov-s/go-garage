@@ -2,8 +2,6 @@ package msgs
 
 import (
 	"errors"
-
-	goworkerr "github.com/soldatov-s/go-garage/providers/errors"
 )
 
 var (
@@ -14,8 +12,3 @@ var (
 	ErrNotLockIDPointer        = errors.New("passed lockID is not int64")
 	ErrDBConnNotEstablished    = errors.New("database connection not established")
 )
-
-func ErrInvalidSubscribeOptionsPointer(iface interface{}) error {
-	return errors.New("passed subscribe options is not *" +
-		goworkerr.ObjName(iface))
-}

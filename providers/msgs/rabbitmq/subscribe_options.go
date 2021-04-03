@@ -1,13 +1,17 @@
 package rabbitmq
 
-// CosumeHandler is handler for consume messages
-type CosumeHandler func([]byte) error
+// ConsumeHandler is handler for consume messages
+type ConsumeHandler interface {
+	Consume([]byte) error
+}
 
 // ShutdownHandler is handler for shutdown event
-type ShutdownHandler func()
+type ShutdownHandler interface {
+	Shutdown()
+}
 
-// SubscribeOptions describes struct with options for subscriber
-type SubscribeOptions struct {
-	ConsumeHndl  CosumeHandler
-	Shutdownhndl ShutdownHandler
+// SubscribeOptions describes interface with options for subscriber
+type SubscribeOptions interface {
+	ConsumeHandler
+	ShutdownHandler
 }
