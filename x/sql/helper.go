@@ -16,13 +16,29 @@ const (
 	HelperItem gogarage.GarageItem = "sqlhelper"
 )
 
+type Helper struct {
+	requestParamsCache map[string][]string
+}
+
+func Create(ctx context.Context) (context.Context, *Helper) {
+	h := &Helper{}
+	return context.WithValue(ctx, HelperItem, h), h
+}
+
+func Get(ctx context.Context) *Helper {
+	if v := ctx.Value(HelperItem); v != nil {
+		return v.(*Helper)
+	}
+	return nil
+}
+
 // RequestParameter return SQL params for struct
 type RequestParameter interface {
-	SQLParamsRequest(ctx context.Context) []string
+	SQLParamsRequest(h *Helper) []string
 }
 
 // SelectByID select data from target by id
-func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error {
+func (h *Helper) SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
 	}
@@ -36,7 +52,7 @@ func SelectByID(conn *sqlx.DB, target string, id int64, data interface{}) error 
 }
 
 // HardDeleteByID hard deletes data from target by id
-func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
+func (h *Helper) HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
 	}
@@ -51,7 +67,7 @@ func HardDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 
 // SoftDeleteByID soft deletes data from target by id
 // It marks data as deleted by changing deleted_at field
-func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
+func (h *Helper) SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 	if conn == nil {
 		return db.ErrDBConnNotEstablished
 	}
@@ -68,14 +84,14 @@ func SoftDeleteByID(conn *sqlx.DB, target string, id int64) (err error) {
 }
 
 // InsertInto inserts new data to target
-func InsertInto(ctx context.Context, conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
+func (h *Helper) InsertInto(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
 	if conn == nil {
 		return nil, db.ErrDBConnNotEstablished
 	}
 
 	stmt, err := conn.PrepareNamed(
-		conn.Rebind(utils.JoinStrings(" ", "INSERT INTO", target, "("+strings.Join(data.SQLParamsRequest(ctx), ", ")+")",
-			"VALUES", "("+":"+strings.Join(data.SQLParamsRequest(ctx), ", :")+") RETURNING *")))
+		conn.Rebind(utils.JoinStrings(" ", "INSERT INTO", target, "("+strings.Join(data.SQLParamsRequest(h), ", ")+")",
+			"VALUES", "("+":"+strings.Join(data.SQLParamsRequest(h), ", :")+") RETURNING *")))
 	if err != nil {
 		return nil, err
 	}
@@ -88,8 +104,7 @@ func InsertInto(ctx context.Context, conn *sqlx.DB, target string, data RequestP
 
 // Update data in target by id
 // ID taken from passed data
-func Update(ctx context.Context, conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
-	h := Get(ctx)
+func (h *Helper) Update(conn *sqlx.DB, target string, data RequestParameter) (interface{}, error) {
 	query := h.BuildQuery(data)
 
 	if conn == nil {
@@ -105,22 +120,6 @@ func Update(ctx context.Context, conn *sqlx.DB, target string, data RequestParam
 	}
 
 	return data, nil
-}
-
-type Helper struct {
-	requestParamsCache map[string][]string
-}
-
-func Create(ctx context.Context) (context.Context, *Helper) {
-	h := &Helper{}
-	return context.WithValue(ctx, HelperItem, h), h
-}
-
-func Get(ctx context.Context) *Helper {
-	if v := ctx.Value(HelperItem); v != nil {
-		return v.(*Helper)
-	}
-	return nil
 }
 
 func valueFromPtr(s interface{}) interface{} {
