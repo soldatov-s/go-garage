@@ -80,11 +80,16 @@ func (p *Provider) SendMessage(connectionName string, message interface{}) error
 }
 
 // Subscribe subscribe for reciving messages.
-func (p *Provider) Subscribe(connectionName string, options SubscribeOptions) error {
+func (p *Provider) Subscribe(connectionName string, options interface{}) error {
+	subscribeOptions, ok := options.(SubscribeOptions)
+	if !ok {
+		return msgs.ErrInvalidSubscribeOptionsPointer
+	}
+
 	conn, err := p.getEnity(connectionName)
 	if err != nil {
 		return err
 	}
 
-	return conn.Subscribe(options)
+	return conn.Subscribe(subscribeOptions)
 }
