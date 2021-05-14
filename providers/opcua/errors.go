@@ -2,8 +2,6 @@ package opcua
 
 import (
 	"errors"
-
-	goworkerr "github.com/soldatov-s/go-garage/providers/errors"
 )
 
 var (
@@ -13,11 +11,3 @@ var (
 	ErrConnectionDoesNotExists = errors.New("connection does not exist")
 	ErrOPCUAConnNotEstablished = errors.New("opcua connection not established")
 )
-
-func ErrNotConfigPointer(iface interface{}) error {
-	return errors.New("passed configuration is not *" + goworkerr.ObjName(iface))
-}
-
-func ErrNotEnityPointer(iface interface{}) error {
-	return errors.New("passed enity isn't *" + goworkerr.ObjName(iface))
-}

@@ -3,12 +3,12 @@ package config
 import (
 	"sync"
 
-	wraperr "github.com/pkg/errors"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
-	ProvidersName = "configurations"
+	CollectorName = "configurations"
 )
 
 // Provider is an interface that every configuration adapter
@@ -21,8 +21,8 @@ type Provider interface {
 	Parse(structure interface{}) error
 }
 
-// Configuration holds everything that related to configuration.
-type Configuration struct {
+// Collector holds everything that related to configuration.
+type Collector struct {
 	Service interface{}
 	// Internal things.
 	// All available configuration providers.
@@ -33,8 +33,8 @@ type Configuration struct {
 	ProvidersOrder []string
 }
 
-func NewConfiguration(cfg interface{}) *Configuration {
-	return &Configuration{
+func NewCollector(cfg interface{}) *Collector {
+	return &Collector{
 		Service: cfg,
 	}
 }
@@ -45,15 +45,15 @@ func NewConfiguration(cfg interface{}) *Configuration {
 // any). For errors be printed logging provider should already be registered.
 // If no configuration providers was registered prior to this function call
 // application will immediately exit.
-func (cfg *Configuration) Parse() error {
+func (cfg *Collector) Parse() error {
 	for _, providerName := range cfg.ProvidersOrder {
 		provider, found := cfg.providers.Load(providerName)
 		if !found {
-			return errors.ErrProviderNotRegistered
+			return base.ErrProviderNotRegistered
 		}
 		err := provider.(Provider).Parse(cfg.Service)
 		if err != nil {
-			return wraperr.Wrap(err, "failed to parse config")
+			return errors.Wrap(err, "failed to parse config")
 		}
 	}
 
@@ -61,14 +61,14 @@ func (cfg *Configuration) Parse() error {
 }
 
 // RegisterProvider registers configuration adapter.
-func (cfg *Configuration) RegisterProvider(providerName string, iface Provider) error {
+func (cfg *Collector) RegisterProvider(providerName string, iface Provider) error {
 	// We should not attempt to register providers with empty names.
 	if providerName == "" {
-		return errors.ErrEmptyProviderName
+		return base.ErrEmptyProviderName
 	}
 
 	if _, found := cfg.providers.LoadOrStore(providerName, iface); found {
-		return errors.ErrProviderAlreadyRegistered(providerName)
+		return errors.Wrapf(base.ErrProviderAlreadyRegistered, "providerName %q", providerName)
 	}
 
 	cfg.SetProvidersOrder(providerName)
@@ -76,25 +76,25 @@ func (cfg *Configuration) RegisterProvider(providerName string, iface Provider) 
 	return nil
 }
 
-func (cfg *Configuration) GetProvider(providerName string) (Provider, error) {
+func (cfg *Collector) GetProvider(providerName string) (Provider, error) {
 	if v, found := cfg.providers.Load(providerName); !found {
-		return nil, errors.ErrProviderNotRegistered
+		return nil, base.ErrProviderNotRegistered
 	} else if prov, ok := v.(Provider); ok {
 		return prov, nil
 	}
 
-	return nil, errors.ErrBadTypeOfProvider
+	return nil, base.ErrBadTypeOfProvider
 }
 
 // ServiceConfig interface for service configuration
 type ServiceConfig interface {
 	// FillGowork fill gowork config from values of service configuration.
-	FillGowork(cfg *Configuration) error
+	FillGowork(cfg *Collector) error
 }
 
 // SetProvidersOrder sets configuration providers execution order. It will
 // overwrite Configuration.Gowork.ProvidersOrder slice completely.
-func (cfg *Configuration) SetProvidersOrder(order ...string) {
+func (cfg *Collector) SetProvidersOrder(order ...string) {
 	if len(cfg.ProvidersOrder) > 0 {
 		cfg.ProvidersOrder = append(cfg.ProvidersOrder, order...)
 	} else {

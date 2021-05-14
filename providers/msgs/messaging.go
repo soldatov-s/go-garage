@@ -3,22 +3,16 @@ package msgs
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	providerswithmetrics "github.com/soldatov-s/go-garage/providers/base/providers/with_metrics"
-	"github.com/soldatov-s/go-garage/providers/errors"
-	"github.com/soldatov-s/go-garage/providers/stats"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
-	ProvidersName = "messages"
+	CollectorName = "messages"
 )
 
 // Provider is an interface every provider should follow.
-type Provider interface {
-	provider.IProvider
-	provider.IEniter
-	stats.IProviderMetrics
-
+type ProviderGateway interface {
 	// SendMessage should send message. Passed message structure depends
 	// on used provider, you should consult provider's documentation about
 	// it.
@@ -32,39 +26,40 @@ type Provider interface {
 	Subscribe(connectionName string, options interface{}) error
 }
 
-// Messaging structure controls all inter-service messaging in gowork.
-type MessagingServers struct {
-	*providerswithmetrics.BaseProvidersWithMetrics
+// Collector is a controlling structure for all caches.
+type Collector struct {
+	*base.CollectorWithMetrics
 }
 
-func NewMessagingServers(ctx context.Context) *MessagingServers {
-	return &MessagingServers{
-		BaseProvidersWithMetrics: providerswithmetrics.NewBaseProvidersWithMetrics(ctx, ProvidersName),
+func NewCollector(ctx context.Context) (*Collector, error) {
+	c, err := base.NewCollectorWithMetrics(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new collector with metrics")
 	}
+	return &Collector{c}, nil
 }
 
-// GetProvider returns provider interface to caller.
-// Returns error if provider isn't registered.
-func (ms *MessagingServers) GetProvider(providerName string) (Provider, error) {
-	if v, err := ms.BaseProviders.GetProvider(providerName); err != nil {
-		return nil, err
-	} else if prov, ok := v.(Provider); ok {
-		return prov, nil
+// GetProvider returns requested caches provider. It'll return error if
+// providers wasn't registered.
+func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
+	p, err := c.CollectorWithMetrics.GetProvider(providerName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
 	}
 
-	return nil, errors.ErrBadTypeOfProvider
+	pg, ok := p.(ProviderGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeOfProvider, "expected ProviderGateway")
+	}
+
+	return pg, nil
 }
 
 // SendMessage sends message via specified provider using specified
 // connection.
-func (ms *MessagingServers) SendMessage(providerName, connectionName string, message interface{}) error {
-	// Check if provider and connection names isn't breaking rules.
-	if err := ms.CheckProviderAndEnityNames(providerName, connectionName); err != nil {
-		return err
-	}
-
+func (c *Collector) SendMessage(providerName, connectionName string, message interface{}) error {
 	// Get provider.
-	prov, err := ms.GetProvider(providerName)
+	prov, err := c.GetProvider(providerName)
 	if err != nil {
 		return err
 	}
@@ -74,14 +69,9 @@ func (ms *MessagingServers) SendMessage(providerName, connectionName string, mes
 
 // Subscribe subscribes to something via specified provider using specified
 // connection.
-func (ms *MessagingServers) Subscribe(providerName, connectionName string, options interface{}) error {
-	// Check if provider and connection names isn't breaking rules.
-	if err := ms.CheckProviderAndEnityNames(providerName, connectionName); err != nil {
-		return err
-	}
-
+func (c *Collector) Subscribe(providerName, connectionName string, options interface{}) error {
 	// Get provider.
-	prov, err := ms.GetProvider(providerName)
+	prov, err := c.GetProvider(providerName)
 	if err != nil {
 		return err
 	}
@@ -89,17 +79,37 @@ func (ms *MessagingServers) Subscribe(providerName, connectionName string, optio
 	return prov.Subscribe(connectionName, options)
 }
 
-// GetAllMetrics collect all metrics for Databases
-func (ms *MessagingServers) GetAllMetrics(out stats.MapMetricsOptions) (stats.MapMetricsOptions, error) {
-	return ms.BaseProvidersWithMetrics.GetAllMetrics(ProvidersName, out)
+// GetMetrics collect all metrics for Caches
+func (c *Collector) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) {
+	return c.CollectorWithMetrics.GetMetrics(ctx)
 }
 
-// GetAllAliveHandlers collect all aliveHandlers for Databases
-func (ms *MessagingServers) GetAllAliveHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return ms.BaseProvidersWithMetrics.GetAllAliveHandlers(ProvidersName, out)
+// GetAliveHandlers collect all aliveHandlers for Caches
+func (c *Collector) GetAliveHandlers(ctx context.Context) (base.MapCheckFunc, error) {
+	return c.CollectorWithMetrics.GetAliveHandlers(ctx)
 }
 
-// GetAllReadyHandlers collect all readyHandlers for Databases
-func (ms *MessagingServers) GetAllReadyHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return ms.BaseProvidersWithMetrics.GetAllReadyHandlers(ProvidersName, out)
+// GetReadyHandlers collect all readyHandlers for Caches
+func (c *Collector) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error) {
+	return c.CollectorWithMetrics.GetReadyHandlers(ctx)
+}
+
+func NewContext(ctx context.Context) (context.Context, error) {
+	c, err := NewCollector(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "new collector %q", CollectorName)
+	}
+	return base.NewContextByName(ctx, CollectorName, c)
+}
+
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
+	}
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }

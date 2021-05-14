@@ -3,72 +3,72 @@ package garage
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/providers/stats"
+	"github.com/soldatov-s/go-garage/x/helper"
 )
 
 const (
-	DefaultProviderName = "stats"
+	ProviderName = "stats"
 )
 
 type Provider struct {
-	*provider.Provider
+	*base.Provider
 }
 
-// Initialize initializes provider.
-func NewProvider(ctx context.Context) *Provider {
-	return &Provider{
-		Provider: provider.NewProvider(ctx, stats.ProvidersName, DefaultProviderName),
+// Initialize should initialize provider. If asynchronous mode
+// supported by provider (e.g. for batch inserting using transactions)
+// queue processor should also be started here.
+func NewProvider(ctx context.Context) (*Provider, error) {
+	p, err := base.NewProvider(ctx, db.CollectorName, ProviderName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new provider with metrics")
 	}
+	return &Provider{p}, nil
 }
 
 // CreateEnity should create enity using passed parameters.
-func (p *Provider) CreateEnity(enityName string, options interface{}) error {
+func (p *Provider) CreateEnity(ctx context.Context, enityName string, options interface{}) error {
 	if _, err := p.GetEnity(enityName); err == nil {
-		p.Log.Debug().Str("enity name", enityName).Msg("enity already created")
-		return nil
+		return base.ErrDuplicateEnity
 	}
 
-	enity, err := NewEnity(p.GetContext(), enityName, options)
+	enity, err := NewEnity(ctx, db.CollectorName, ProviderName, enityName, options)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "create enity")
 	}
 
 	p.Entitys.Store(enityName, enity)
-
 	return nil
 }
 
-// GetEnity should return pointer to connection structure to caller.
+// getEnity should return pointer to enity structure to caller.
 func (p *Provider) getEnity(enityName string) (*Enity, error) {
-	if enityName == "" {
-		return nil, errors.ErrEmptyEnityName
-	}
-
-	enity, found := p.Entitys.Load(enityName)
-	if !found {
-		return nil, errors.ErrEnityDoesNotExists
+	enity, err := p.Provider.GetEnity(enityName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get enity from base provider")
 	}
 
 	// Checking that enity type is *Enity
 	enityPointer, ok := enity.(*Enity)
 	if !ok {
-		return nil, errors.ErrInvalidEnityPointer(Enity{})
+		return nil, errors.Wrapf(base.ErrInvalidEnityPointer, "expect %q", helper.ObjName(Enity{}))
 	}
 
 	return enityPointer, nil
 }
 
 // GetEnity should return pointer to connection structure to caller.
-func (p *Provider) GetEnity(connectionName string) (interface{}, error) {
-	return p.getEnity(connectionName)
+func (p *Provider) GetEnity(enityName string) (interface{}, error) {
+	return p.getEnity(enityName)
 }
 
 // RegisterReadyCheck should register a function for /health/ready
 // endpoint.
 // nolint : dupl
-func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.CheckFunc) error {
+func (p *Provider) RegisterReadyCheck(ctx context.Context, dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
 	}
@@ -86,7 +86,7 @@ func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.Che
 		if err != nil {
 			return false
 		}
-		if err = conn.RegisterReadyCheck(dependencyName, checkFunc); err != nil {
+		if err = conn.RegisterReadyCheck(ctx, dependencyName, checkFunc); err != nil {
 			return false
 		}
 
@@ -99,7 +99,7 @@ func (p *Provider) RegisterReadyCheck(dependencyName string, checkFunc stats.Che
 // RegisterAliveCheck should register a function for /health/alive
 // endpoint.
 // nolint : dupl
-func (p *Provider) RegisterAliveCheck(dependencyName string, checkFunc stats.CheckFunc) error {
+func (p *Provider) RegisterAliveCheck(ctx context.Context, dependencyName string, checkFunc stats.CheckFunc) error {
 	if dependencyName == "" {
 		return stats.ErrEmptyDependencyName
 	}
@@ -117,7 +117,7 @@ func (p *Provider) RegisterAliveCheck(dependencyName string, checkFunc stats.Che
 		if err != nil {
 			return false
 		}
-		if err = conn.RegisterAliveCheck(dependencyName, checkFunc); err != nil {
+		if err = conn.RegisterAliveCheck(ctx, dependencyName, checkFunc); err != nil {
 			return false
 		}
 
@@ -131,7 +131,7 @@ func (p *Provider) RegisterAliveCheck(dependencyName string, checkFunc stats.Che
 // metricName should be used only as internal identifier. Provider
 // should provide instructions for using metricOptions as well as
 // cast to appropriate type.
-func (p *Provider) RegisterMetric(metricName string, options interface{}) error {
+func (p *Provider) RegisterMetric(ctx context.Context, metricName string, options interface{}) error {
 	if metricName == "" {
 		return stats.ErrEmptyMetricName
 	}
@@ -145,7 +145,7 @@ func (p *Provider) RegisterMetric(metricName string, options interface{}) error 
 		if err != nil {
 			return false
 		}
-		if err = conn.RegisterMetric(metricName, options); err != nil {
+		if err = conn.RegisterMetric(ctx, metricName, options); err != nil {
 			return false
 		}
 

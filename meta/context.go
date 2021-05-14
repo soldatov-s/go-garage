@@ -3,6 +3,7 @@ package meta
 import (
 	"context"
 
+	"github.com/pkg/errors"
 	gogarage "github.com/soldatov-s/go-garage"
 )
 
@@ -10,38 +11,36 @@ const (
 	AppItem gogarage.GarageItem = "app"
 )
 
-func Registrate(ctx context.Context) (context.Context, *ApplicationInfo) {
-	v := Get(ctx)
-	if v != nil {
-		return ctx, v
-	}
+var (
+	ErrNotFoundInContext = errors.New("not found in context")
+	ErrFailedTypeCast    = errors.New("failed type cast")
+	ErrDuplicateMeta     = errors.New("duplicacte meta in context")
+)
 
-	a := &ApplicationInfo{
-		Name:        "unknown",
-		Version:     "0.0.0",
-		Description: "no description",
+func NewContext(ctx context.Context) (context.Context, error) {
+	v, _ := FromContext(ctx)
+	if v != nil {
+		return nil, ErrDuplicateMeta
 	}
-	return context.WithValue(ctx, AppItem, a), a
+	return context.WithValue(ctx, AppItem, DefaultAppInfo()), nil
 }
 
-func Get(ctx context.Context) *ApplicationInfo {
+func FromContext(ctx context.Context) (*AppInfo, error) {
 	v := ctx.Value(AppItem)
-	if v != nil {
-		return v.(*ApplicationInfo)
+	if v == nil {
+		return nil, ErrNotFoundInContext
 	}
-	return nil
+	appInfo, ok := v.(*AppInfo)
+	if !ok {
+		return nil, ErrFailedTypeCast
+	}
+	return appInfo, nil
 }
 
-func SetAppInfo(ctx context.Context, name, builded, hash, version, description string) context.Context {
-	a := Get(ctx)
-	if a == nil {
-		ctx, a = Registrate(ctx)
+func NewContextByParams(ctx context.Context, cfg *Config) (context.Context, error) {
+	v, _ := FromContext(ctx)
+	if v != nil {
+		return nil, ErrDuplicateMeta
 	}
-	a.Name = name
-	a.Builded = builded
-	a.Hash = hash
-	a.Version = version
-	a.Description = description
-
-	return ctx
+	return context.WithValue(ctx, AppItem, NewAppInfo(cfg)), nil
 }

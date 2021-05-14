@@ -3,72 +3,127 @@ package redis
 import (
 	"context"
 
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/cache"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/soldatov-s/go-garage/x/helper"
 )
 
-func Registrate(ctx context.Context) (context.Context, error) {
-	ctx = cache.Registrate(ctx)
-	d := cache.Get(ctx)
-	if d == nil {
-		return nil, cache.ErrEmptyCachees
+func AddProvider(ctx context.Context) (context.Context, error) {
+	ctx, err := cache.NewContext(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "new context")
 	}
 
-	if _, err := d.GetProvider(DefaultProviderName); err == nil {
-		return ctx, nil
-	} else if err != errors.ErrProviderNotRegistered {
-		return nil, err
+	c, err := cache.FromContext(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get collector from context")
 	}
-	return ctx, d.RegisterProvider(DefaultProviderName, NewProvider(ctx))
+
+	p, err := NewProvider(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "new provider")
+	}
+
+	if err := c.AddProvider(ProviderName, p); err != nil {
+		return nil, errors.Wrap(err, "add provider")
+	}
+
+	return ctx, nil
 }
 
-func Get(ctx context.Context) (cache.Provider, error) {
-	d := cache.Get(ctx)
-	if d == nil {
-		return nil, cache.ErrEmptyCachees
+func GetProvider(ctx context.Context) (cache.ProviderGateway, error) {
+	c, err := cache.FromContext(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get collector from context")
 	}
 
-	return d.GetProvider(DefaultProviderName)
+	p, err := c.GetProvider(ProviderName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
+	}
+
+	return p, nil
+}
+
+func AddEnity(ctx context.Context, enityName string, options interface{}) (context.Context, error) {
+	p, err := GetProvider(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
+	}
+
+	em, ok := p.(base.EntityGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeCast, "expected EnityGateway")
+	}
+
+	err = em.CreateEnity(ctx, enityName, options)
+	if err != nil {
+		return nil, errors.Wrap(err, "create enity")
+	}
+
+	return ctx, nil
 }
 
 func RegistrateEnity(ctx context.Context, enityName string, options interface{}) (context.Context, error) {
-	ctx, err := Registrate(ctx)
+	var err error
+	ctx, err = cache.NewContext(ctx)
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, base.ErrDuplicateCollector):
+			// skip
+		default:
+			return nil, errors.Wrap(err, "add provider")
+		}
 	}
 
-	p, err := Get(ctx)
+	ctx, err = AddProvider(ctx)
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, base.ErrProviderAlreadyRegistered):
+			// skip
+		default:
+			return nil, errors.Wrap(err, "add provider")
+		}
 	}
 
-	err = p.CreateEnity(enityName, options)
+	ctx, err = AddEnity(ctx, enityName, options)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "add enity")
 	}
 
 	return ctx, nil
 }
 
 func GetEnity(ctx context.Context, enityName string) (interface{}, error) {
-	p, err := Get(ctx)
+	p, err := GetProvider(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "get provider")
 	}
 
-	return p.GetEnity(enityName)
+	em, ok := p.(base.EntityGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeCast, "expected EnityGateway")
+	}
+
+	e, err := em.GetEnity(enityName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get enity")
+	}
+
+	return e, nil
 }
 
 func GetEnityTypeCast(ctx context.Context, enityName string) (*Enity, error) {
-	enity, err := GetEnity(ctx, enityName)
+	e, err := GetEnity(ctx, enityName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Checking that enity type is *Enity
-	enityPointer, ok := enity.(*Enity)
+	enityPointer, ok := e.(*Enity)
 	if !ok {
-		return nil, errors.ErrInvalidEnityPointer(Enity{})
+		return nil, errors.Wrapf(base.ErrInvalidEnityPointer, "expected %q", helper.ObjName(Enity{}))
 	}
 
 	return enityPointer, nil

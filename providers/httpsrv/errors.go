@@ -2,8 +2,6 @@ package httpsrv
 
 import (
 	"errors"
-
-	goworkerr "github.com/soldatov-s/go-garage/providers/errors"
 )
 
 var (
@@ -17,9 +15,5 @@ var (
 	ErrEmptyHTTPHandler     = errors.New("empty http handler")
 	ErrUnknownHTTPMethod    = errors.New("unknown http method")
 	ErrServerNotUp          = errors.New("http server isn't up after 10 seconds")
+	ErrInvalidGroupPointer  = errors.New("passed pointer to group is not valid")
 )
-
-func ErrInvalidGroupPointer(iface interface{}) error {
-	return errors.New("passed pointer to group is not  **" +
-		goworkerr.ObjName(iface))
-}

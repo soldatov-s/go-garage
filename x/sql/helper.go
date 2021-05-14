@@ -1,7 +1,6 @@
 package sql
 
 import (
-	"context"
 	"reflect"
 	"strings"
 	"time"
@@ -18,18 +17,6 @@ const (
 
 type Helper struct {
 	requestParamsCache map[string][]string
-}
-
-func Create(ctx context.Context) (context.Context, *Helper) {
-	h := &Helper{}
-	return context.WithValue(ctx, HelperItem, h), h
-}
-
-func Get(ctx context.Context) *Helper {
-	if v := ctx.Value(HelperItem); v != nil {
-		return v.(*Helper)
-	}
-	return nil
 }
 
 // RequestParameter return SQL params for struct

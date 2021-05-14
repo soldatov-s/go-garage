@@ -16,7 +16,7 @@ func (mmo MapMetricsOptions) Fill(src MapMetricsOptions) {
 	}
 }
 
-func (mmo MapMetricsOptions) RegistrateMetric(prov Provider) error {
+func (mmo MapMetricsOptions) RegistrateMetric(prov ProviderGateway) error {
 	for k, m := range mmo {
 		err := prov.RegisterMetric(k, m)
 		if err != nil {

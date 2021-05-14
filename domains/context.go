@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pkg/errors"
 	gogarage "github.com/soldatov-s/go-garage"
 )
 
@@ -11,42 +12,68 @@ const (
 	DomainsItem gogarage.GarageItem = "domains"
 )
 
+var (
+	ErrNotFoundDomain    = errors.New("not found domain in context")
+	ErrDuplicateDomain   = errors.New("duplicacte domain in context")
+	ErrDuplicateDomains  = errors.New("duplicacte domains in context")
+	ErrNotFoundInContext = errors.New("not found in context")
+	ErrFailedTypeCast    = errors.New("failed type cast")
+)
+
 type Domains struct {
 	sync.Map
 }
 
-func Create(ctx context.Context) (context.Context, *Domains) {
-	d := &Domains{}
-	return context.WithValue(ctx, DomainsItem, d), d
+func NewContext(ctx context.Context) (context.Context, error) {
+	v, _ := FromContext(ctx)
+	if v != nil {
+		return nil, ErrDuplicateDomains
+	}
+	return context.WithValue(ctx, DomainsItem, &Domains{}), nil
 }
 
-func Get(ctx context.Context) *Domains {
-	if v := ctx.Value(DomainsItem); v != nil {
-		return v.(*Domains)
+func FromContext(ctx context.Context) (*Domains, error) {
+	v := ctx.Value(DomainsItem)
+	if v == nil {
+		return nil, ErrNotFoundInContext
 	}
-	return nil
+	domains, ok := v.(*Domains)
+	if !ok {
+		return nil, ErrFailedTypeCast
+	}
+	return domains, nil
 }
 
-func GetByName(ctx context.Context, name string) interface{} {
-	if d := Get(ctx); d != nil {
-		v, _ := d.Load(name)
-		return v
+func FromContextByName(ctx context.Context, name string) (interface{}, error) {
+	p, err := FromContext(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "not found domains in context")
 	}
 
-	return nil
+	v, ok := p.Load(name)
+	if !ok {
+		return nil, ErrNotFoundDomain
+	}
+
+	return v, nil
 }
 
-func RegistrateByName(ctx context.Context, name string, val interface{}) context.Context {
-	if v := GetByName(ctx, name); v != nil {
-		return ctx
+func NewContextByName(ctx context.Context, name string, val interface{}) (context.Context, error) {
+	var c context.Context
+	_, err := FromContextByName(ctx, name)
+	if err != nil {
+		return nil, errors.Wrapf(ErrDuplicateDomain, "domain %q", name)
 	}
 
-	if v := Get(ctx); v != nil {
-		v.Store(name, val)
-		return ctx
+	switch err {
+	case ErrNotFoundDomain:
+		p, _ := FromContext(ctx)
+		p.Store(name, val)
+	case ErrNotFoundInContext:
+		c, _ = NewContext(ctx)
+		p, _ := FromContext(c)
+		p.Store(name, val)
 	}
 
-	c, v := Create(ctx)
-	v.Store(name, val)
-	return c
+	return c, nil
 }

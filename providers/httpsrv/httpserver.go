@@ -4,22 +4,18 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	"github.com/soldatov-s/go-garage/providers/base/providers"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
-	ProvidersName = "httpsrv"
+	CollectorName = "httpsrv"
 )
 
 type MiddleWareFunc func(http.Handler) http.Handler
 
 // Provider is an interface every provider should follow.
-type Provider interface {
-	provider.IProvider
-	provider.IEnityManager
-
+type ProviderGateway interface {
 	// CreateAPIVersionGroup should be responsible for creating
 	// routes grouping for specified API version. Version should be
 	// a string without leading "v" or "version" or anything like that.
@@ -42,41 +38,22 @@ type Provider interface {
 	RegisterEndpoint(serverName, method, endpoint string, handler http.Handler, middleware ...MiddleWareFunc) error
 }
 
-// HTTPServers structure controls all HTTP servers for gowork.
-type HTTPServers struct {
-	*providers.BaseProviders
+// Collector structure controls all HTTP servers for gowork.
+type Collector struct {
+	*base.Collector
 }
 
-func NewHTTPServers(ctx context.Context) *HTTPServers {
-	return &HTTPServers{
-		BaseProviders: providers.NewBaseProviders(ctx, ProvidersName),
-	}
-}
-
-// CreateEnity creates new HTTP server using designated provider.
-func (https *HTTPServers) CreateEnity(providerName, serverName string, options interface{}) error {
-	prov, err := https.GetProvider(providerName)
+func NewCollector(ctx context.Context) (*Collector, error) {
+	c, err := base.NewCollector(ctx, CollectorName)
 	if err != nil {
-		return err
+		return nil, errors.Wrap(err, "new collector with metrics")
 	}
-
-	return prov.CreateEnity(serverName, options)
-}
-
-// GetEnity returns HTTP server controlling structure from designated
-// provider.
-func (https *HTTPServers) GetEnity(providerName, serverName string) (interface{}, error) {
-	prov, err := https.GetProvider(providerName)
-	if err != nil {
-		return nil, err
-	}
-
-	return prov.GetEnity(serverName)
+	return &Collector{c}, nil
 }
 
 // GetAPIVersionGroup returns HTTP server routing group using designated
 // provider.
-func (https *HTTPServers) GetAPIVersionGroup(providerName, serverName, apiVersion string) (interface{}, error) {
+func (https *Collector) GetAPIVersionGroup(providerName, serverName, apiVersion string) (interface{}, error) {
 	prov, err := https.GetProvider(providerName)
 	if err != nil {
 		return nil, err
@@ -87,7 +64,7 @@ func (https *HTTPServers) GetAPIVersionGroup(providerName, serverName, apiVersio
 
 // CreateAPIVersionGroup creates new API version group using designated
 // provider.
-func (https *HTTPServers) CreateAPIVersionGroup(providerName, serverName, apiVersion string, middlewares ...interface{}) error {
+func (https *Collector) CreateAPIVersionGroup(providerName, serverName, apiVersion string, middlewares ...interface{}) error {
 	prov, err := https.GetProvider(providerName)
 	if err != nil {
 		return err
@@ -96,20 +73,24 @@ func (https *HTTPServers) CreateAPIVersionGroup(providerName, serverName, apiVer
 	return prov.CreateAPIVersionGroup(serverName, apiVersion, middlewares...)
 }
 
-// GetProvider returns provider.
-// Returns error if provider isn't registered.
-func (https *HTTPServers) GetProvider(providerName string) (Provider, error) {
-	if v, err := https.BaseProviders.GetProvider(providerName); err != nil {
-		return nil, err
-	} else if prov, ok := v.(Provider); ok {
-		return prov, nil
+// GetProvider returns requested caches provider. It'll return error if
+// providers wasn't registered.
+func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
+	p, err := c.Collector.GetProvider(providerName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
 	}
 
-	return nil, errors.ErrBadTypeOfProvider
+	pg, ok := p.(ProviderGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeOfProvider, "expected ProviderGateway")
+	}
+
+	return pg, nil
 }
 
 // RegisterEndpoint register endpoint on selected HTTP server.
-func (https *HTTPServers) RegisterEndpoint(
+func (https *Collector) RegisterEndpoint(
 	providerName, serverName, method, endpoint string,
 	handler http.Handler,
 	m ...MiddleWareFunc) error {
@@ -119,4 +100,24 @@ func (https *HTTPServers) RegisterEndpoint(
 	}
 
 	return prov.RegisterEndpoint(serverName, method, endpoint, handler, m...)
+}
+
+func NewContext(ctx context.Context) (context.Context, error) {
+	c, err := NewCollector(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "new collector %q", CollectorName)
+	}
+	return base.NewContextByName(ctx, CollectorName, c)
+}
+
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
+	}
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }

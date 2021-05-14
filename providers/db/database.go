@@ -3,23 +3,17 @@ package db
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	providerswithmetrics "github.com/soldatov-s/go-garage/providers/base/providers/with_metrics"
-	"github.com/soldatov-s/go-garage/providers/errors"
-	"github.com/soldatov-s/go-garage/providers/stats"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
-	ProvidersName = "database"
+	CollectorName = "database"
 )
 
 // Provider is an interface every database provider should conform.
 // Every provider can hold more than one connection.
-type Provider interface {
-	provider.IProvider
-	provider.IEnityManager
-	stats.IProviderMetrics
-}
+type ProviderGateway interface{}
 
 type Bulker interface {
 	// AppendToQueue should add passed item into processing queue, if provider
@@ -41,22 +35,40 @@ type Migrator interface {
 	RegisterMigration(connectionName string, migration interface{}) error
 }
 
-// Databases is a controlling structure for all databases and providers.
-type Databases struct {
-	*providerswithmetrics.BaseProvidersWithMetrics
+// Collector is a controlling structure for all caches.
+type Collector struct {
+	*base.CollectorWithMetrics
 }
 
-func NewDatabases(ctx context.Context) *Databases {
-	return &Databases{
-		BaseProvidersWithMetrics: providerswithmetrics.NewBaseProvidersWithMetrics(ctx, ProvidersName),
+func NewCollector(ctx context.Context) (*Collector, error) {
+	c, err := base.NewCollectorWithMetrics(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new collector with metrics")
 	}
+	return &Collector{c}, nil
+}
+
+// GetProvider returns requested caches provider. It'll return error if
+// providers wasn't registered.
+func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
+	p, err := c.CollectorWithMetrics.GetProvider(providerName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
+	}
+
+	pg, ok := p.(ProviderGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeOfProvider, "expected ProviderGateway")
+	}
+
+	return pg, nil
 }
 
 // AppendToQueue appends passed queueItem to queue for designated provider
 // and connection. Passed queue item should be valid for designated provider,
 // otherwise error will be returned.
-func (d *Databases) AppendToQueue(providerName, connectionName string, queueItem interface{}) error {
-	prov, err := d.GetProvider(providerName)
+func (c *Collector) AppendToQueue(providerName, connectionName string, queueItem interface{}) error {
+	prov, err := c.GetProvider(providerName)
 	if err != nil {
 		return err
 	}
@@ -68,22 +80,10 @@ func (d *Databases) AppendToQueue(providerName, connectionName string, queueItem
 	return prov.(Bulker).AppendToQueue(connectionName, queueItem)
 }
 
-// GetProvider returns requested database provider.
-// Return error if providers wasn't registered.
-func (d *Databases) GetProvider(providerName string) (Provider, error) {
-	if v, err := d.BaseProviders.GetProvider(providerName); err != nil {
-		return nil, err
-	} else if prov, ok := v.(Provider); ok {
-		return prov, nil
-	}
-
-	return nil, errors.ErrBadTypeOfProvider
-}
-
 // RegisterMigration registers migration for designated provider and
 // connection.
-func (d *Databases) RegisterMigration(providerName, connectionName string, migration interface{}) error {
-	prov, err := d.GetProvider(providerName)
+func (c *Collector) RegisterMigration(providerName, connectionName string, migration interface{}) error {
+	prov, err := c.GetProvider(providerName)
 	if err != nil {
 		return err
 	}
@@ -98,8 +98,8 @@ func (d *Databases) RegisterMigration(providerName, connectionName string, migra
 // WaitForFlush block execution until underlying provider will flush
 // queue. If something will go wrong here - error will be returned by
 // provider.
-func (d *Databases) WaitForFlush(providerName, connectionName string) error {
-	prov, err := d.GetProvider(providerName)
+func (c *Collector) WaitForFlush(providerName, connectionName string) error {
+	prov, err := c.GetProvider(providerName)
 	if err != nil {
 		return err
 	}
@@ -111,17 +111,37 @@ func (d *Databases) WaitForFlush(providerName, connectionName string) error {
 	return prov.(Bulker).WaitForFlush(connectionName)
 }
 
-// GetAllMetrics collect all metrics for Databases
-func (d *Databases) GetAllMetrics(out stats.MapMetricsOptions) (stats.MapMetricsOptions, error) {
-	return d.BaseProvidersWithMetrics.GetAllMetrics(ProvidersName, out)
+// GetMetrics collect all metrics for Caches
+func (c *Collector) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) {
+	return c.CollectorWithMetrics.GetMetrics(ctx)
 }
 
-// GetAllAliveHandlers collect all aliveHandlers for Databases
-func (d *Databases) GetAllAliveHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return d.BaseProvidersWithMetrics.GetAllAliveHandlers(ProvidersName, out)
+// GetAliveHandlers collect all aliveHandlers for Caches
+func (c *Collector) GetAliveHandlers(ctx context.Context) (base.MapCheckFunc, error) {
+	return c.CollectorWithMetrics.GetAliveHandlers(ctx)
 }
 
-// GetAllReadyHandlers collect all readyHandlers for Databases
-func (d *Databases) GetAllReadyHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return d.BaseProvidersWithMetrics.GetAllReadyHandlers(ProvidersName, out)
+// GetReadyHandlers collect all readyHandlers for Caches
+func (c *Collector) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error) {
+	return c.CollectorWithMetrics.GetReadyHandlers(ctx)
+}
+
+func NewContext(ctx context.Context) (context.Context, error) {
+	c, err := NewCollector(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "new collector %q", CollectorName)
+	}
+	return base.NewContextByName(ctx, CollectorName, c)
+}
+
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
+	}
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }

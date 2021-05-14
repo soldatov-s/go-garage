@@ -6,13 +6,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 // HandlerLogger handler that adds requesID into logger fields
 func HandlerLogger(parent *zerolog.Logger, ec echo.Context) (log zerolog.Logger, requestID string, err error) {
 	if parent == nil {
-		return zerolog.Logger{}, "", errors.ErrLoggerPointerIsNil
+		return zerolog.Logger{}, "", base.ErrLoggerPointerIsNil
 	}
 
 	requestID = ec.Request().Header.Get("x-request-id")

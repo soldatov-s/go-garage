@@ -4,60 +4,57 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/httpsrv"
+	"github.com/soldatov-s/go-garage/x/helper"
 )
 
-const DefaultProviderName = "echo"
+const ProviderName = "echo"
 
 // Provider is a HTTP server provider using labstack's Echo
 // HTTP framework.
 type Provider struct {
-	*provider.Provider
+	*base.Provider
 }
 
 // Initialize should initialize provider. If asynchronous mode
 // supported by provider (e.g. for batch inserting using transactions)
 // queue processor should also be started here.
-func NewProvider(ctx context.Context) *Provider {
-	return &Provider{
-		Provider: provider.NewProvider(ctx, httpsrv.ProvidersName, DefaultProviderName),
+func NewProvider(ctx context.Context) (*Provider, error) {
+	p, err := base.NewProvider(ctx, httpsrv.CollectorName, ProviderName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new provider with metrics")
 	}
+	return &Provider{p}, nil
 }
 
 // CreateEnity should create enity using passed parameters.
-func (p *Provider) CreateEnity(enityName string, options interface{}) error {
+func (p *Provider) CreateEnity(ctx context.Context, enityName string, options interface{}) error {
 	if _, err := p.GetEnity(enityName); err == nil {
-		p.Log.Debug().Str("enity name", enityName).Msg("enity already created")
-		return nil
+		return base.ErrDuplicateEnity
 	}
 
-	enity, err := NewEnity(p.GetContext(), enityName, options)
+	enity, err := NewEnity(ctx, httpsrv.CollectorName, ProviderName, enityName, options)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "create enity")
 	}
 
 	p.Entitys.Store(enityName, enity)
-
 	return nil
 }
 
-// GetEnity should return pointer to connection structure to caller.
+// getEnity should return pointer to enity structure to caller.
 func (p *Provider) getEnity(enityName string) (*Enity, error) {
-	if enityName == "" {
-		return nil, errors.ErrEmptyEnityName
-	}
-
-	enity, found := p.Entitys.Load(enityName)
-	if !found {
-		return nil, errors.ErrEnityDoesNotExists
+	enity, err := p.Provider.GetEnity(enityName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get enity from base provider")
 	}
 
 	// Checking that enity type is *Enity
 	enityPointer, ok := enity.(*Enity)
 	if !ok {
-		return nil, errors.ErrInvalidEnityPointer(Enity{})
+		return nil, errors.Wrapf(base.ErrInvalidEnityPointer, "expect %q", helper.ObjName(Enity{}))
 	}
 
 	return enityPointer, nil
@@ -71,14 +68,14 @@ func (p *Provider) GetEnity(connectionName string) (interface{}, error) {
 // CreateAPIVersionGroup creates requested API version routes group.
 // Passed apiVersion should be a string with API version without
 // leading "v", "version" or anything like that.
-func (p *Provider) CreateAPIVersionGroup(serverName, apiVersion string, middlewares ...interface{},
+func (p *Provider) CreateAPIVersionGroup(ctx context.Context, serverName, apiVersion string, middlewares ...interface{},
 ) error {
 	enity, err := p.getEnity(serverName)
 	if err != nil {
 		return err
 	}
 
-	return enity.CreateAPIVersionGroup(apiVersion, middlewares...)
+	return enity.CreateAPIVersionGroup(ctx, apiVersion, middlewares...)
 }
 
 // GetAPIVersionGroup returns routes grouping for passed apiVersion.

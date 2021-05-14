@@ -13,8 +13,12 @@ type Config struct {
 	HTTPEnityName string `envconfig:"optional"`
 }
 
-func (c *Config) Validate() {
-	if c.HTTPEnityName == "" {
-		c.HTTPEnityName = defaultHTTPServer
+func (c *Config) SetDefault() *Config {
+	cfgCopy := *c
+
+	if cfgCopy.HTTPEnityName == "" {
+		cfgCopy.HTTPEnityName = defaultHTTPServer
 	}
+
+	return &cfgCopy
 }

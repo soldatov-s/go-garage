@@ -1,11 +1,11 @@
 package redis
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/soldatov-s/go-garage/providers/cache"
 	"github.com/soldatov-s/go-garage/x/rejson"
 )
 
@@ -55,43 +55,24 @@ func NewMutexByID(conn *rejson.Client, lockKey string, expire, checkInterval tim
 
 // Lock sets Redis-lock item. It is blocking call which will wait until
 // redis lock key will be deleted, pretty much like simple mutex.
-func (m *Mutex) Lock() (err error) {
+func (m *Mutex) Lock(ctx context.Context) (err error) {
 	m.mu.Lock()
-	return m.commonLock()
+	return m.commonLock(ctx)
 }
 
 // Unlock deletes Redis-lock item.
-func (m *Mutex) Unlock() (err error) {
+func (m *Mutex) Unlock(ctx context.Context) (err error) {
 	m.mu.Unlock()
-	return m.commonUnlock()
+	return m.commonUnlock(ctx)
 }
 
 // Extend attempts to extend the timeout of a Redis-lock.
-func (m *Mutex) Extend(timeout time.Duration) (err error) {
-	return m.commonExtend(timeout)
+func (m *Mutex) Extend(ctx context.Context, timeout time.Duration) (err error) {
+	return m.commonExtend(ctx, timeout)
 }
 
-// checkDBConn check that connection not nil and active
-func (m *Mutex) checkDBConn() (err error) {
-	if m.conn == nil {
-		return cache.ErrDBConnNotEstablished
-	}
-
-	_, err = m.conn.Ping(m.conn.Context()).Result()
-	if err != nil {
-		return cache.ErrDBConnNotEstablished
-	}
-
-	return nil
-}
-
-func (m *Mutex) commonLock() (err error) {
+func (m *Mutex) commonLock(ctx context.Context) (err error) {
 	var result bool
-
-	err = m.checkDBConn()
-	if err != nil {
-		return err
-	}
 
 	newUUID, err := uuid.NewUUID()
 	if err != nil {
@@ -100,7 +81,7 @@ func (m *Mutex) commonLock() (err error) {
 
 	m.lockValue = newUUID.String()
 
-	result, err = m.conn.SetNX(m.conn.Context(), m.lockKey, m.lockValue, m.expire).Result()
+	result, err = m.conn.SetNX(ctx, m.lockKey, m.lockValue, m.expire).Result()
 	if err != nil {
 		return err
 	}
@@ -109,12 +90,7 @@ func (m *Mutex) commonLock() (err error) {
 		m.locked = true
 
 		for {
-			err := m.checkDBConn()
-			if err != nil {
-				return err
-			}
-
-			result, err = m.conn.SetNX(m.conn.Context(), m.lockKey, m.lockValue, m.expire).Result()
+			result, err = m.conn.SetNX(ctx, m.lockKey, m.lockValue, m.expire).Result()
 			if err != nil {
 				return err
 			}
@@ -130,14 +106,9 @@ func (m *Mutex) commonLock() (err error) {
 	return nil
 }
 
-func (m *Mutex) commonUnlock() (err error) {
+func (m *Mutex) commonUnlock(ctx context.Context) (err error) {
 	if m.locked {
-		err := m.checkDBConn()
-		if err != nil {
-			return err
-		}
-
-		cmdString, err := m.conn.Get(m.conn.Context(), m.lockKey).Result()
+		cmdString, err := m.conn.Get(ctx, m.lockKey).Result()
 		if err != nil {
 			return err
 		}
@@ -155,20 +126,15 @@ func (m *Mutex) commonUnlock() (err error) {
 	return nil
 }
 
-func (m *Mutex) commonExtend(timeout time.Duration) (err error) {
+func (m *Mutex) commonExtend(ctx context.Context, timeout time.Duration) (err error) {
 	if m.locked {
-		err := m.checkDBConn()
-		if err != nil {
-			return err
-		}
-
-		cmdString, err := m.conn.Get(m.conn.Context(), m.lockKey).Result()
+		cmdString, err := m.conn.Get(ctx, m.lockKey).Result()
 		if err != nil {
 			return err
 		}
 
 		if m.lockValue == cmdString {
-			_, err = m.conn.Expire(m.conn.Context(), m.lockKey, timeout).Result()
+			_, err = m.conn.Expire(ctx, m.lockKey, timeout).Result()
 			if err != nil {
 				return err
 			}

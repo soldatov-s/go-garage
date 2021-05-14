@@ -3,22 +3,31 @@ package config
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
-func Registrate(ctx context.Context, cfg interface{}) context.Context {
-	return providers.RegistrateByName(ctx, ProvidersName, NewConfiguration(cfg))
+func NewContext(ctx context.Context) (context.Context, error) {
+	return base.NewContextByName(ctx, CollectorName, NewCollector(ctx))
 }
 
-func Get(ctx context.Context) *Configuration {
-	v := providers.GetByName(ctx, ProvidersName)
-	if v != nil {
-		return providers.GetByName(ctx, ProvidersName).(*Configuration)
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
 	}
-	return nil
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }
 
 func Parse(ctx context.Context) error {
-	c := Get(ctx)
+	c, err := FromContext(ctx)
+	if err != nil {
+		return err
+	}
+
 	return c.Parse()
 }

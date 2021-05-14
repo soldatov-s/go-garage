@@ -3,9 +3,8 @@ package stats
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	"github.com/soldatov-s/go-garage/providers/base/providers"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
@@ -13,7 +12,7 @@ const (
 	AliveEndpoint   = "/health/alive"
 	MetricsEndpoint = "/metrics"
 
-	ProvidersName = "statistics"
+	CollectorName = "statistics"
 )
 
 // Checking function should accept no parameters and return
@@ -25,7 +24,7 @@ type CheckFunc func() (bool, string)
 
 type MapCheckFunc map[string]CheckFunc
 
-func (mcf MapCheckFunc) RegistrateHandler(prov Provider) error {
+func (mcf MapCheckFunc) RegistrateHandler(prov ProviderGateway) error {
 	for k, f := range mcf {
 		err := prov.RegisterAliveCheck(k, f)
 		if err != nil {
@@ -59,14 +58,13 @@ func (mcf MapCheckFunc) Fill(src MapCheckFunc) {
 	}
 }
 
-// Provider is an interface which every statistics provider
+// ProviderGateway is an interface which every statistics provider
 // should conform.
 // Every provider should be able to respond on alive checks, ready
 // checks and metrics request. It is up to provider to decide protocol
 // for all things, but HTTP is preferred.
-type Provider interface {
-	provider.IProvider
-	provider.IEniter
+type ProviderGateway interface {
+	Start(ctx context.Context) error
 	// RegisterAliveCheck should register a function for /health/alive
 	// endpoint.
 	// Checks registered via RegisterReadyCheck can appear in random order
@@ -84,20 +82,38 @@ type Provider interface {
 	RegisterReadyCheck(dependencyName string, checkFunc CheckFunc) error
 }
 
-// Statistics is a controlling structure for all statistics providers.
-type Statistics struct {
-	*providers.BaseProviders
+// Collector is a controlling structure for all caches.
+type Collector struct {
+	*base.CollectorWithMetrics
 }
 
-func NewStatistics(ctx context.Context) *Statistics {
-	return &Statistics{
-		BaseProviders: providers.NewBaseProviders(ctx, ProvidersName),
+func NewCollector(ctx context.Context) (*Collector, error) {
+	c, err := base.NewCollectorWithMetrics(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new collector with metrics")
 	}
+	return &Collector{c}, nil
+}
+
+// GetProvider returns requested caches provider. It'll return error if
+// providers wasn't registered.
+func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
+	p, err := c.CollectorWithMetrics.GetProvider(providerName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
+	}
+
+	pg, ok := p.(ProviderGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeOfProvider, "expected ProviderGateway")
+	}
+
+	return pg, nil
 }
 
 // RegisterAliveCheck registers check function for /health/alive endpoint
 // in designated provider.
-func (st *Statistics) RegisterAliveCheck(providerName, dependencyName string, checkFunc func() (bool, string)) error {
+func (st *Collector) RegisterAliveCheck(providerName, dependencyName string, checkFunc func() (bool, string)) error {
 	prov, err := st.GetProvider(providerName)
 	if err != nil {
 		return err
@@ -108,7 +124,7 @@ func (st *Statistics) RegisterAliveCheck(providerName, dependencyName string, ch
 
 // RegisterMetric registers metric in designated provider. It is up to
 // provider to provide instructions on metrics registration.
-func (st *Statistics) RegisterMetric(providerName, metricName string, metricOptions interface{}) error {
+func (st *Collector) RegisterMetric(providerName, metricName string, metricOptions interface{}) error {
 	prov, err := st.GetProvider(providerName)
 	if err != nil {
 		return err
@@ -119,7 +135,7 @@ func (st *Statistics) RegisterMetric(providerName, metricName string, metricOpti
 
 // RegisterReadyCheck registers check function for /health/ready endpoint
 // in designated provider.
-func (st *Statistics) RegisterReadyCheck(providerName, dependencyName string, checkFunc func() (bool, string)) error {
+func (st *Collector) RegisterReadyCheck(providerName, dependencyName string, checkFunc func() (bool, string)) error {
 	prov, err := st.GetProvider(providerName)
 	if err != nil {
 		return err
@@ -128,23 +144,11 @@ func (st *Statistics) RegisterReadyCheck(providerName, dependencyName string, ch
 	return prov.RegisterReadyCheck(dependencyName, checkFunc)
 }
 
-// GetProvider returns provider interface to caller.
-// Returns error if provider isn't registered.
-func (st *Statistics) GetProvider(providerName string) (Provider, error) {
-	if v, err := st.BaseProviders.GetProvider(providerName); err != nil {
-		return nil, err
-	} else if prov, ok := v.(Provider); ok {
-		return prov, nil
-	}
-
-	return nil, errors.ErrBadTypeOfProvider
-}
-
 // Start sends start signal to all Statistic providers.
-func (st *Statistics) Start(metrics MapMetricsOptions, aliveHandlers, readyHandlers MapCheckFunc) error {
+func (st *Collector) Start(ctx context.Context, metrics MapMetricsOptions, aliveHandlers, readyHandlers MapCheckFunc) error {
 	var err error
 	st.GetProviders().Range(func(k, v interface{}) bool {
-		if err = st.StartProvider(k.(string), metrics, aliveHandlers, readyHandlers); err != nil {
+		if err = st.StartProvider(ctx, k.(string), metrics, aliveHandlers, readyHandlers); err != nil {
 			return false
 		}
 
@@ -155,7 +159,7 @@ func (st *Statistics) Start(metrics MapMetricsOptions, aliveHandlers, readyHandl
 }
 
 // Start sends start signal to selected Statistic provider.
-func (st *Statistics) StartProvider(providerName string, metrics MapMetricsOptions, aliveHandlers, readyHandlers MapCheckFunc) error {
+func (st *Collector) StartProvider(ctx context.Context, providerName string, metrics MapMetricsOptions, aliveHandlers, readyHandlers MapCheckFunc) error {
 	prov, err := st.GetProvider(providerName)
 	if err != nil {
 		return err
@@ -173,5 +177,25 @@ func (st *Statistics) StartProvider(providerName string, metrics MapMetricsOptio
 		return err
 	}
 
-	return prov.Start()
+	return prov.Start(ctx)
+}
+
+func NewContext(ctx context.Context) (context.Context, error) {
+	c, err := NewCollector(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "new collector %q", CollectorName)
+	}
+	return base.NewContextByName(ctx, CollectorName, c)
+}
+
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
+	}
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }

@@ -3,58 +3,63 @@ package opcua
 import (
 	"context"
 
-	"github.com/soldatov-s/go-garage/providers/base/provider"
-	providerswithmetrics "github.com/soldatov-s/go-garage/providers/base/providers/with_metrics"
-	"github.com/soldatov-s/go-garage/providers/errors"
-	"github.com/soldatov-s/go-garage/providers/stats"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
 )
 
 const (
-	ProvidersName = "opcua"
+	CollectorName = "opcua"
 )
 
 // Provider is an interface every database provider should conform.
 // Every provider can hold more than one connection.
-type Provider interface {
-	provider.IProvider
-	provider.IEnityManager
-	stats.IProviderMetrics
+type ProviderGateway interface{}
+
+// Collector is a controlling structure for all caches.
+type Collector struct {
+	*base.CollectorWithMetrics
 }
 
-// Opcua is a controlling structure for all Opcua and providers.
-type Opcua struct {
-	*providerswithmetrics.BaseProvidersWithMetrics
-}
-
-func NewOpcua(ctx context.Context) *Opcua {
-	return &Opcua{
-		BaseProvidersWithMetrics: providerswithmetrics.NewBaseProvidersWithMetrics(ctx, ProvidersName),
+func NewCollector(ctx context.Context) (*Collector, error) {
+	c, err := base.NewCollectorWithMetrics(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new collector with metrics")
 	}
+	return &Collector{c}, nil
 }
 
-// GetProvider returns requested database provider.
-// Return error if providers wasn't registered.
-func (d *Opcua) GetProvider(providerName string) (Provider, error) {
-	if v, err := d.BaseProviders.GetProvider(providerName); err != nil {
-		return nil, err
-	} else if prov, ok := v.(Provider); ok {
-		return prov, nil
+// GetProvider returns requested caches provider. It'll return error if
+// providers wasn't registered.
+func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
+	p, err := c.CollectorWithMetrics.GetProvider(providerName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get provider")
 	}
 
-	return nil, errors.ErrBadTypeOfProvider
+	pg, ok := p.(ProviderGateway)
+	if !ok {
+		return nil, errors.Wrap(base.ErrBadTypeOfProvider, "expected ProviderGateway")
+	}
+
+	return pg, nil
 }
 
-// GetAllMetrics collect all metrics for Opcua
-func (d *Opcua) GetAllMetrics(out stats.MapMetricsOptions) (stats.MapMetricsOptions, error) {
-	return d.BaseProvidersWithMetrics.GetAllMetrics(ProvidersName, out)
+func NewContext(ctx context.Context) (context.Context, error) {
+	c, err := NewCollector(ctx)
+	if err != nil {
+		return nil, errors.Wrapf(err, "new collector %q", CollectorName)
+	}
+	return base.NewContextByName(ctx, CollectorName, c)
 }
 
-// GetAllAliveHandlers collect all aliveHandlers for Opcua
-func (d *Opcua) GetAllAliveHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return d.BaseProvidersWithMetrics.GetAllAliveHandlers(ProvidersName, out)
-}
-
-// GetAllReadyHandlers collect all readyHandlers for Opcua
-func (d *Opcua) GetAllReadyHandlers(out stats.MapCheckFunc) (stats.MapCheckFunc, error) {
-	return d.BaseProvidersWithMetrics.GetAllReadyHandlers(ProvidersName, out)
+func FromContext(ctx context.Context) (*Collector, error) {
+	v, err := base.FromContextByName(ctx, CollectorName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get from context by name")
+	}
+	c, ok := v.(*Collector)
+	if !ok {
+		return nil, base.ErrFailedTypeCast
+	}
+	return c, nil
 }

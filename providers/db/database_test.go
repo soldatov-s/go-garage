@@ -4,16 +4,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/soldatov-s/go-garage/providers/logger"
+	"github.com/soldatov-s/go-garage/log"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDatabaseInitialize(t *testing.T) {
+func TestCacheInitialize(t *testing.T) {
 	ctx := context.Background()
-	logger.Registrate(ctx)
-	logger.Get(ctx).Initialize(&logger.Config{Level: logger.LoggerLevelInfo, NoColoredOutput: true, WithTrace: false})
-
-	Registrate(ctx)
-	v := Get(ctx)
+	ctx, err := log.NewContextByConfig(ctx, &log.Config{Level: log.LoggerLevelInfo, NoColoredOutput: true, WithTrace: false})
+	require.Nil(t, err)
+	ctx, err = NewContext(ctx)
+	require.Nil(t, err)
+	v, err := FromContext(ctx)
+	require.Nil(t, err)
 	require.NotNil(t, v)
 }

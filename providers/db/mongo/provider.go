@@ -3,63 +3,65 @@ package mongo
 import (
 	"context"
 
-	providerwithmetrics "github.com/soldatov-s/go-garage/providers/base/provider/with_metrics"
-	"github.com/soldatov-s/go-garage/providers/db"
-	"github.com/soldatov-s/go-garage/providers/errors"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/providers/cache"
+	"github.com/soldatov-s/go-garage/x/helper"
 )
 
-const defaultProviderName = "mongo"
+const ProviderName = "mongo"
 
 // Provider for database mongo
+// Provider provides PostgreSQL database worker. This provider
+// supports asynchronous database actions (like bulk inserting). Every
+// connection will have own goroutine for queue processing.
 type Provider struct {
-	*providerwithmetrics.Provider
+	*base.ProviderWithMetrics
 }
 
-// NewProvider creates new provider.
-func NewProvider(ctx context.Context) *Provider {
-	return &Provider{
-		Provider: providerwithmetrics.NewProvider(ctx, db.ProvidersName, defaultProviderName),
+// Initialize should initialize provider. If asynchronous mode
+// supported by provider (e.g. for batch inserting using transactions)
+// queue processor should also be started here.
+func NewProvider(ctx context.Context) (*Provider, error) {
+	p, err := base.NewProviderWithMetrics(ctx, cache.CollectorName, ProviderName)
+	if err != nil {
+		return nil, errors.Wrap(err, "new provider with metrics")
 	}
+	return &Provider{p}, nil
 }
 
 // CreateEnity should create enity using passed parameters.
-func (p *Provider) CreateEnity(enityName string, options interface{}) error {
+func (p *Provider) CreateEnity(ctx context.Context, enityName string, options interface{}) error {
 	if _, err := p.GetEnity(enityName); err == nil {
-		p.Log.Debug().Str("enity name", enityName).Msg("enity already created")
-		return nil
+		return base.ErrDuplicateEnity
 	}
 
-	enity, err := NewEnity(p.GetContext(), enityName, options)
+	enity, err := NewEnity(ctx, cache.CollectorName, ProviderName, enityName, options)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "create enity")
 	}
 
 	p.Entitys.Store(enityName, enity)
-
 	return nil
 }
 
-// GetEnity should return pointer to connection structure to caller.
+// getEnity should return pointer to enity structure to caller.
 func (p *Provider) getEnity(enityName string) (*Enity, error) {
-	if enityName == "" {
-		return nil, errors.ErrEmptyEnityName
-	}
-
-	enity, found := p.Entitys.Load(enityName)
-	if !found {
-		return nil, errors.ErrEnityDoesNotExists
+	enity, err := p.Provider.GetEnity(enityName)
+	if err != nil {
+		return nil, errors.Wrap(err, "get enity from base provider")
 	}
 
 	// Checking that enity type is *Enity
 	enityPointer, ok := enity.(*Enity)
 	if !ok {
-		return nil, errors.ErrInvalidEnityPointer(Enity{})
+		return nil, errors.Wrapf(base.ErrInvalidEnityPointer, "expect %q", helper.ObjName(Enity{}))
 	}
 
 	return enityPointer, nil
 }
 
 // GetEnity should return pointer to connection structure to caller.
-func (p *Provider) GetEnity(connectionName string) (interface{}, error) {
-	return p.getEnity(connectionName)
+func (p *Provider) GetEnity(enityName string) (interface{}, error) {
+	return p.getEnity(enityName)
 }
