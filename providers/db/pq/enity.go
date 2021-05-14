@@ -13,8 +13,10 @@ import (
 	"github.com/pressly/goose"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/providers/db/migrations"
 	"github.com/soldatov-s/go-garage/utils"
 	"github.com/soldatov-s/go-garage/x/helper"
+	"golang.org/x/sync/errgroup"
 
 	// nolint : a blank import
 	_ "github.com/lib/pq"
@@ -31,9 +33,9 @@ type Enity struct {
 	migratedMutex sync.Mutex
 	migrated      bool
 	// Queue for bulk operations
+	queueWorkerStopped bool
 	queue              []*QueueItem
 	queueMutex         *sync.Mutex
-	queueWorkerStopped bool
 }
 
 // NewEnity create new enity.
@@ -104,24 +106,45 @@ func (e *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, conn
 }
 
 // Start starts connection workers and connection procedure itself.
-func (e *Enity) Start(ctx context.Context) error {
+func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
+	// If connection is nil - try to establish (or reestablish)
+	// connection.
+	if e.Conn == nil {
+		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
+		// Connect to database.
+		var err error
+		e.Conn, err = sqlx.Connect("postgres", e.cfg.ComposeDSN())
+		if err != nil {
+			return errors.Wrap(err, "connect to enity")
+		}
+		e.GetLogger(ctx).Info().Msg("database connection established")
+
+		// Migrate database.
+		if err := e.Migrate(ctx); err != nil {
+			return errors.Wrap(err, "migrate")
+		}
+
+		// Set connection pooling options.
+		e.SetConnPoolLifetime(e.cfg.MaxConnectionLifetime)
+		e.SetConnPoolLimits(e.cfg.MaxIdleConnections, e.cfg.MaxOpenedConnections)
+	}
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.ConnWatcherStopped {
-		if e.cfg.StartWatcher {
-			e.ConnWatcherStopped = false
-			go e.startWatcher(ctx)
-		} else {
-			// Manually start the connection once to establish connection
-			_ = e.watcher(ctx)
-		}
+		e.ConnWatcherStopped = false
+		errorGroup.Go(func() error {
+			return e.startWatcher(ctx)
+		})
 	}
 
 	// Queue worker will be started only if needed. If it won't be
 	// started then queueWorkerStopped flag forced to true.
 	if e.cfg.StartQueueWorker && e.queueWorkerStopped {
 		e.queueWorkerStopped = false
-		go e.startQueueWorker(ctx)
+		errorGroup.Go(func() error {
+			return e.startQueueWorker(ctx)
+		})
 	}
 
 	return nil
@@ -146,24 +169,22 @@ func (e *Enity) WaitForEstablishing(ctx context.Context) {
 }
 
 // Connection watcher goroutine entrypoint.
-func (e *Enity) startWatcher(ctx context.Context) {
+func (e *Enity) startWatcher(ctx context.Context) error {
 	e.GetLogger(ctx).Info().Msg("starting connection watcher")
 
-	ticker := time.NewTicker(e.cfg.Timeout)
-
-	// First start - manually.
-	_ = e.watcher(ctx)
-
-	// Then - every ticker tick.
-	for range ticker.C {
-		if e.watcher(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("connection watcher stopped")
+			e.ConnWatcherStopped = true
+			return ctx.Err()
+		default:
+			if err := e.Ping(ctx); err != nil {
+				e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
+			}
 		}
+		time.Sleep(e.cfg.Timeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("connection watcher stopped and connection to database was shutted down")
-	e.ConnWatcherStopped = true
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
@@ -183,7 +204,7 @@ func (e *Enity) shutdown(ctx context.Context) error {
 }
 
 // Pinging connection if it's alive (or we think so).
-func (e *Enity) ping(ctx context.Context) error {
+func (e *Enity) Ping(ctx context.Context) error {
 	if e.Conn == nil {
 		return nil
 	}
@@ -195,64 +216,26 @@ func (e *Enity) ping(ctx context.Context) error {
 	return nil
 }
 
-// Connection watcher itself.
-func (e *Enity) watcher(ctx context.Context) bool {
-	// If we're shutting down - stop connection watcher.
-	if e.WeAreShuttingDown {
-		_ = e.shutdown(ctx)
-		return true
-	}
-
-	if err := e.ping(ctx); err != nil {
-		e.GetLogger(ctx).Error().Err(err).Msg("database connection lost")
-	}
-
-	// If connection is nil - try to establish (or reestablish)
-	// connection.
-	if e.Conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
-		// Connect to database.
-		dbConn, err := sqlx.Connect("postgres", e.cfg.ComposeDSN())
-		if err == nil {
-			e.GetLogger(ctx).Info().Msg("database connection established")
-			e.Conn = dbConn
-
-			// Migrate database.
-			e.Migrate(ctx)
-
-			// Set connection pooling options.
-			e.SetConnPoolLifetime(e.cfg.MaxConnectionLifetime)
-			e.SetConnPoolLimits(e.cfg.MaxIdleConnections, e.cfg.MaxOpenedConnections)
-			return false
-		}
-
-		if !e.cfg.StartWatcher {
-			e.GetLogger(ctx).Fatal().Err(err).Msgf("failed to connect to database")
-			return true
-		}
-
-		e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to database, reconnect after %d seconds", e.cfg.Timeout)
-		return true
-	}
-
-	return false
-}
-
 func (e *Enity) setMigrationFlag() {
 	e.migratedMutex.Lock()
 	e.migrated = true
 	// After successful migration we should not attempt to migrate it
 	// again if connection to database was re-established.
-	e.cfg.Migrate.Action = actionNothing
+	e.cfg.Migrate.Action = migrations.ActionNothing
 	e.migratedMutex.Unlock()
 }
 
-func (c *Enity) waitConn() {
+func (e *Enity) waitConn(ctx context.Context) error {
 	for {
-		if c.Conn != nil {
-			break
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if e.Conn != nil {
+				break
+			}
+			return nil
 		}
-
 		time.Sleep(time.Millisecond * 500)
 	}
 }
@@ -272,23 +255,23 @@ func (e *Enity) migrate(ctx context.Context, currentDBVersion int64) error {
 	var err error
 
 	switch {
-	case e.cfg.Migrate.Action == actionUp && e.cfg.Migrate.Count == 0:
+	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count == 0:
 		e.GetLogger(ctx).Info().Msg("applying all unapplied migrations...")
 
 		err = goose.Up(e.Conn.DB, e.cfg.Migrate.Directory)
-	case e.cfg.Migrate.Action == actionUp && e.cfg.Migrate.Count != 0:
+	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count != 0:
 		newVersion := currentDBVersion + e.cfg.Migrate.Count
 
 		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("migrating database to specific version")
 
 		err = goose.UpTo(e.Conn.DB, e.cfg.Migrate.Directory, newVersion)
-	case e.cfg.Migrate.Action == actionDown && e.cfg.Migrate.Count == 0:
+	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count == 0:
 		e.GetLogger(ctx).Info().Msg("downgrading database to zero state, you'll need to re-apply migrations!")
 
 		err = goose.DownTo(e.Conn.DB, e.cfg.Migrate.Directory, 0)
 
 		e.GetLogger(ctx).Fatal().Msg("database downgraded to zero state, you have to re-apply migrations")
-	case e.cfg.Migrate.Action == actionDown && e.cfg.Migrate.Count != 0:
+	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count != 0:
 		newVersion := currentDBVersion - e.cfg.Migrate.Count
 
 		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("downgrading database to specific version")
@@ -304,27 +287,26 @@ func (e *Enity) migrate(ctx context.Context, currentDBVersion int64) error {
 	return err
 }
 
-func (c *Enity) migrateSchema(ctx context.Context) error {
-	if c.cfg.Migrate.Schema == "" {
+func (e *Enity) migrateSchema(ctx context.Context) error {
+	if e.cfg.Migrate.Schema == "" {
 		return nil
 	}
 
-	_, err := c.Conn.ExecContext(ctx, c.Conn.Rebind("CREATE SCHEMA IF NOT EXISTS "+c.cfg.Migrate.Schema))
+	_, err := e.Conn.ExecContext(ctx, e.Conn.Rebind("CREATE SCHEMA IF NOT EXISTS "+e.cfg.Migrate.Schema))
 
 	return err
 }
 
 // Migrates database.
-func (e *Enity) Migrate(ctx context.Context) {
-	e.waitConn()
+func (e *Enity) Migrate(ctx context.Context) error {
+	if err := e.waitConn(ctx); err != nil {
+		return errors.Wrap(err, "wait connect")
+	}
 	migrationsLog := e.GetLogger(ctx).With().Str("subsystem", "database migrations").Logger()
 
 	err := e.migrateSchema(ctx)
 	if err != nil {
-		migrationsLog.Error().Err(err).Msg("failed to execute schema migration")
-		e.setMigrationFlag()
-
-		return
+		return errors.Wrap(err, "execute schema migration")
 	}
 
 	// Ensuring that we're using right database dialect. Without that
@@ -339,7 +321,7 @@ func (e *Enity) Migrate(ctx context.Context) {
 	migrationsLog.Debug().Int64("database version", currentDBVersion).Msg("current database version obtained")
 
 	if err := e.migrate(ctx, currentDBVersion); err != nil {
-		migrationsLog.Fatal().Err(err).Msg("failed to execute migration sequence")
+		return errors.Wrap(err, "execute migration sequence")
 	}
 
 	migrationsLog.Info().Msg("database migrated successfully")
@@ -352,6 +334,7 @@ func (e *Enity) Migrate(ctx context.Context) {
 	}
 
 	migrationsLog.Info().Msg("migrate-only mode wasn't requested")
+	return nil
 }
 
 // MigrationInCode represents informational struct for database migration
@@ -364,13 +347,13 @@ type MigrationInCode struct {
 	Up   func(tx *sql.Tx) error
 }
 
-func (c *Enity) RegisterMigration(migration *MigrationInCode) {
+func (e *Enity) RegisterMigration(migration *MigrationInCode) {
 	goose.AddNamedMigration(migration.Name, migration.Up, migration.Down)
 }
 
 // SetSchema sets schema for migrations.
-func (c *Enity) SetSchema(schema string) {
-	c.cfg.Migrate.Schema = schema
+func (e *Enity) SetSchema(schema string) {
+	e.cfg.Migrate.Schema = schema
 	goose.SetTableName(schema + ".goose_db_version")
 }
 
@@ -399,8 +382,8 @@ func (e *Enity) NewMutex(checkInterval time.Duration) (*Mutex, error) {
 }
 
 // NewMutexByID create new database mutex with selected id
-func (c *Enity) NewMutexByID(lockID int64, checkInterval time.Duration) (*Mutex, error) {
-	dbConn, err := c.createMutexConnect()
+func (e *Enity) NewMutexByID(lockID int64, checkInterval time.Duration) (*Mutex, error) {
+	dbConn, err := e.createMutexConnect()
 	if err != nil {
 		return nil, errors.Wrap(err, "create mutex conn")
 	}
@@ -446,48 +429,41 @@ type QueueItem struct {
 	WaitForFlush chan bool
 }
 
-func (c *Enity) AppendToQueue(queueItem *QueueItem) {
-	defer c.queueMutex.Unlock()
-	c.queueMutex.Lock()
-	c.queue = append(c.queue, queueItem)
+func (e *Enity) AppendToQueue(queueItem *QueueItem) {
+	defer e.queueMutex.Unlock()
+	e.queueMutex.Lock()
+	e.queue = append(e.queue, queueItem)
 }
 
-func (c *Enity) recreateQueue() {
-	defer c.queueMutex.Unlock()
-	c.queueMutex.Lock()
-	c.queue = make([]*QueueItem, 0, 10240)
+func (e *Enity) recreateQueue() {
+	defer e.queueMutex.Unlock()
+	e.queueMutex.Lock()
+	e.queue = make([]*QueueItem, 0, 10240)
 }
 
 // Queue worker goroutine entry point.
-func (e *Enity) startQueueWorker(ctx context.Context) {
+func (e *Enity) startQueueWorker(ctx context.Context) error {
 	e.GetLogger(ctx).Info().Msg("starting queue worker")
-
-	ticker := time.NewTicker(e.cfg.QueueWorkerTimeout)
 	e.recreateQueue()
 
-	e.queueMutex = &sync.Mutex{}
-
-	for range ticker.C {
-		if e.workWithQueue(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("queue worker stopped")
+			e.queueWorkerStopped = true
+			return ctx.Err()
+		default:
+			if err := e.workWithQueue(ctx); err != nil {
+				return errors.Wrap(err, "work queue")
+			}
 		}
+		time.Sleep(e.cfg.QueueWorkerTimeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("queue worker stopped")
-	e.queueWorkerStopped = true
 }
 
-func (e *Enity) workWithQueue(ctx context.Context) bool {
-	// We should stop on shutdown.
-	if e.WeAreShuttingDown {
-		return true
-	}
-
-	// Do nothing if connection wasn't yet established.
-	if e.Conn == nil {
-		e.GetLogger(ctx).Debug().Msg("connection to database wasn't established, do nothing")
-		return false
+func (e *Enity) workWithQueue(ctx context.Context) error {
+	if e.WeAreShuttingDown || e.Conn == nil {
+		return nil
 	}
 
 	e.queueMutex.Lock()
@@ -498,7 +474,7 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 
 	if e.WeAreShuttingDown {
 		if len(queriesToProcess) == 0 {
-			return true
+			return nil
 		}
 
 		e.GetLogger(ctx).Warn().Int("items in queue", len(queriesToProcess)).Msg("still has items in queue to process, delaying shutdown")
@@ -508,19 +484,15 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 
 	if len(queriesToProcess) == 0 {
 		e.GetLogger(ctx).Debug().Msg("nothing to process, skipping iteration")
-		return false
+		return nil
 	}
 
 	tx, err := e.Conn.Beginx()
 	if err != nil {
-		e.GetLogger(ctx).Error().
-			Err(err).
-			Msg("failed to start sql transaction; items will be pushed back to queue")
 		e.queueMutex.Lock()
 		e.queue = append(e.queue, queriesToProcess...)
 		e.queueMutex.Unlock()
-
-		return false
+		return errors.Wrap(err, "start sql transaction")
 	}
 
 	var (
@@ -547,10 +519,10 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 		if item.Param.IsUnique(e.Conn) {
 			e.GetLogger(ctx).Debug().Msgf("parameters that will be passed to sqlx: %+v", item.Param)
 
-			_, err1 := tx.NamedExec(item.Query, item.Param)
-			if err1 != nil {
+			_, err := tx.NamedExec(item.Query, item.Param)
+			if err != nil {
 				// Maybe write problematic queries somewhere.
-				e.GetLogger(ctx).Error().Err(err1).Msg("failed to execute query!")
+				e.GetLogger(ctx).Error().Err(err).Msg("failed to execute query!")
 			}
 		} else {
 			e.GetLogger(ctx).Warn().Msgf("this item already present in database: %+v", item.Param)
@@ -558,15 +530,13 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 	}
 
 	if err := tx.Commit(); err != nil {
-		// What to do with items?
 		e.GetLogger(ctx).Err(err).Msg("failed to commit transaction to database, rolling back...")
-
 		errBack := tx.Rollback()
 		if errBack != nil {
-			e.GetLogger(ctx).Error().Err(errBack).Msg("failed to rollback failed transaction, expect database inconsistency!")
+			return errors.Wrap(err, "rollback failed transaction")
 		}
 	} else {
-		e.GetLogger(ctx).Info().Msg("sql transaction committed")
+		e.GetLogger(ctx).Debug().Msg("sql transaction committed")
 	}
 
 	if waitForFlush {
@@ -577,12 +547,12 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 		e.queueMutex.Unlock()
 	}
 
-	return false
+	return nil
 }
 
-func (e *Enity) getDBStats() error {
+func (e *Enity) getDBStats() {
 	if e.Conn == nil {
-		return nil
+		return
 	}
 
 	dbStats := e.Conn.DB.Stats()
@@ -670,8 +640,6 @@ func (e *Enity) getDBStats() error {
 			(m.(prometheus.Gauge)).Set(float64(dbStats.Idle))
 		},
 	}
-
-	return nil
 }
 
 // GetMetrics return map of the metrics from database connection
@@ -685,7 +653,7 @@ func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) 
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(0)
 			if e.Conn != nil {
-				err := e.ping(ctx)
+				err := e.Ping(ctx)
 				if err == nil {
 					(m.(prometheus.Gauge)).Set(1)
 				}
@@ -693,9 +661,7 @@ func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) 
 		},
 	}
 
-	if err := e.getDBStats(); err != nil {
-		return nil, errors.Wrap(err, "get db stats")
-	}
+	e.getDBStats()
 	return e.Metrics, nil
 }
 
@@ -706,7 +672,7 @@ func (e *Enity) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error)
 			return false, "not connected"
 		}
 
-		if err := e.ping(ctx); err != nil {
+		if err := e.Ping(ctx); err != nil {
 			return false, err.Error()
 		}
 

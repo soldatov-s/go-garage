@@ -1,13 +1,13 @@
-package ch
+package migrations
 
 import (
 	"strings"
 )
 
 const (
-	actionNothing = "nothing"
-	actionUp      = "up"
-	actionDown    = "down"
+	ActionNothing = "nothing"
+	ActionUp      = "up"
+	ActionDown    = "down"
 )
 
 // MigrationsType represents enumerator for acceptable migration types.
@@ -53,7 +53,7 @@ func (c *MigrateConfig) SetDefault() *MigrateConfig {
 	}
 
 	if cfgCopy.Action == "" {
-		cfgCopy.Action = actionNothing
+		cfgCopy.Action = ActionNothing
 	}
 
 	cfgCopy.Action = strings.ToLower(c.Action)

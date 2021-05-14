@@ -3,6 +3,8 @@ package pq
 import (
 	"strings"
 	"time"
+
+	"github.com/soldatov-s/go-garage/providers/db/migrations"
 )
 
 const (
@@ -56,7 +58,7 @@ type Config struct {
 	// will be made. Default timeout is 10 seconds.
 	Timeout time.Duration `envconfig:"optional"`
 	// Migrate struct contains options for migrate
-	Migrate *MigrateConfig
+	Migrate *migrations.MigrateConfig
 }
 
 // SetDefault checks connection config. If required field is empty - it will

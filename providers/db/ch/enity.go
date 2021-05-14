@@ -13,6 +13,7 @@ import (
 	"github.com/pressly/goose"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/providers/db/migrations"
 	"github.com/soldatov-s/go-garage/utils"
 	"github.com/soldatov-s/go-garage/x/helper"
 
@@ -31,9 +32,9 @@ type Enity struct {
 	migratedMutex sync.Mutex
 	migrated      bool
 	// Queue for bulk operations
+	queueWorkerStopped bool
 	queue              []*QueueItem
 	queueMutex         *sync.Mutex
-	queueWorkerStopped bool
 }
 
 // NewEnity create new enity.
@@ -243,13 +244,13 @@ func (e *Enity) setMigrationFlag() {
 	e.migrated = true
 	// After successful migration we should not attempt to migrate it
 	// again if connection to database was re-established.
-	e.cfg.Migrate.Action = actionNothing
+	e.cfg.Migrate.Action = migrations.ActionNothing
 	e.migratedMutex.Unlock()
 }
 
-func (c *Enity) waitConn() {
+func (e *Enity) waitConn() {
 	for {
-		if c.Conn != nil {
+		if e.Conn != nil {
 			break
 		}
 
@@ -272,23 +273,23 @@ func (e *Enity) migrate(ctx context.Context, currentDBVersion int64) error {
 	var err error
 
 	switch {
-	case e.cfg.Migrate.Action == actionUp && e.cfg.Migrate.Count == 0:
+	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count == 0:
 		e.GetLogger(ctx).Info().Msg("applying all unapplied migrations...")
 
 		err = goose.Up(e.Conn.DB, e.cfg.Migrate.Directory)
-	case e.cfg.Migrate.Action == actionUp && e.cfg.Migrate.Count != 0:
+	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count != 0:
 		newVersion := currentDBVersion + e.cfg.Migrate.Count
 
 		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("migrating database to specific version")
 
 		err = goose.UpTo(e.Conn.DB, e.cfg.Migrate.Directory, newVersion)
-	case e.cfg.Migrate.Action == actionDown && e.cfg.Migrate.Count == 0:
+	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count == 0:
 		e.GetLogger(ctx).Info().Msg("downgrading database to zero state, you'll need to re-apply migrations!")
 
 		err = goose.DownTo(e.Conn.DB, e.cfg.Migrate.Directory, 0)
 
 		e.GetLogger(ctx).Fatal().Msg("database downgraded to zero state, you have to re-apply migrations")
-	case e.cfg.Migrate.Action == actionDown && e.cfg.Migrate.Count != 0:
+	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count != 0:
 		newVersion := currentDBVersion - e.cfg.Migrate.Count
 
 		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("downgrading database to specific version")
@@ -304,12 +305,12 @@ func (e *Enity) migrate(ctx context.Context, currentDBVersion int64) error {
 	return err
 }
 
-func (c *Enity) migrateSchema(ctx context.Context) error {
-	if c.cfg.Migrate.Schema == "" {
+func (e *Enity) migrateSchema(ctx context.Context) error {
+	if e.cfg.Migrate.Schema == "" {
 		return nil
 	}
 
-	_, err := c.Conn.ExecContext(ctx, c.Conn.Rebind("CREATE SCHEMA IF NOT EXISTS "+c.cfg.Migrate.Schema))
+	_, err := e.Conn.ExecContext(ctx, e.Conn.Rebind("CREATE SCHEMA IF NOT EXISTS "+e.cfg.Migrate.Schema))
 
 	return err
 }
@@ -364,13 +365,13 @@ type MigrationInCode struct {
 	Up   func(tx *sql.Tx) error
 }
 
-func (c *Enity) RegisterMigration(migration *MigrationInCode) {
+func (e *Enity) RegisterMigration(migration *MigrationInCode) {
 	goose.AddNamedMigration(migration.Name, migration.Up, migration.Down)
 }
 
 // SetSchema sets schema for migrations.
-func (c *Enity) SetSchema(schema string) {
-	c.cfg.Migrate.Schema = schema
+func (e *Enity) SetSchema(schema string) {
+	e.cfg.Migrate.Schema = schema
 	// Add dbname as prefix after approved pull request https://github.com/pressly/goose/pull/228
 	goose.SetTableName("goose_db_version")
 }
@@ -413,16 +414,16 @@ type QueueItem struct {
 	WaitForFlush chan bool
 }
 
-func (c *Enity) AppendToQueue(queueItem *QueueItem) {
-	defer c.queueMutex.Unlock()
-	c.queueMutex.Lock()
-	c.queue = append(c.queue, queueItem)
+func (e *Enity) AppendToQueue(queueItem *QueueItem) {
+	defer e.queueMutex.Unlock()
+	e.queueMutex.Lock()
+	e.queue = append(e.queue, queueItem)
 }
 
-func (c *Enity) recreateQueue() {
-	defer c.queueMutex.Unlock()
-	c.queueMutex.Lock()
-	c.queue = make([]*QueueItem, 0, 10240)
+func (e *Enity) recreateQueue() {
+	defer e.queueMutex.Unlock()
+	e.queueMutex.Lock()
+	e.queue = make([]*QueueItem, 0, 10240)
 }
 
 // Queue worker goroutine entry point.
@@ -547,9 +548,9 @@ func (e *Enity) workWithQueue(ctx context.Context) bool {
 	return false
 }
 
-func (e *Enity) getDBStats() error {
+func (e *Enity) getDBStats() {
 	if e.Conn == nil {
-		return nil
+		return
 	}
 
 	dbStats := e.Conn.DB.Stats()
@@ -637,8 +638,6 @@ func (e *Enity) getDBStats() error {
 			(m.(prometheus.Gauge)).Set(float64(dbStats.Idle))
 		},
 	}
-
-	return nil
 }
 
 // GetMetrics return map of the metrics from database connection
@@ -660,9 +659,7 @@ func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) 
 		},
 	}
 
-	if err := e.getDBStats(); err != nil {
-		return nil, errors.Wrap(err, "get db stats")
-	}
+	e.getDBStats()
 	return e.Metrics, nil
 }
 

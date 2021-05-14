@@ -2,8 +2,6 @@ package db
 
 import (
 	"errors"
-
-	"github.com/soldatov-s/go-garage/x/helper"
 )
 
 var (
@@ -14,32 +12,6 @@ var (
 	ErrMutexPointerIsNil       = errors.New("nil passed as mutex pointer")
 	ErrNotLockIDPointer        = errors.New("passed lockID is not int64")
 	ErrDBConnNotEstablished    = errors.New("database connection not established")
+	ErrNotBulker               = errors.New("passed provider is not bulker")
+	ErrNotMigrator             = errors.New("passed provider is not migrator")
 )
-
-func ErrNotConfigPointer(iface interface{}) error {
-	return errors.New("passed configuration is not *" + helper.ObjName(iface))
-}
-
-func ErrNotEnityPointer(iface interface{}) error {
-	return errors.New("passed enity isn't *" + helper.ObjName(iface))
-}
-
-func ErrNotMutexPointer(iface interface{}) error {
-	return errors.New("passed mutex isn't **" + helper.ObjName(iface))
-}
-
-func ErrNotMigrationPointer(iface interface{}) error {
-	return errors.New("passed pointer is not *" + helper.ObjName(iface))
-}
-
-func ErrNotQueueItemPointer(iface interface{}) error {
-	return errors.New("passed item isn't *" + helper.ObjName(iface))
-}
-
-func ErrNotBulker(iface interface{}) error {
-	return errors.New("passed provider " + helper.ObjName(iface) + "is not bulker")
-}
-
-func ErrNotMigrator(iface interface{}) error {
-	return errors.New("passed provider " + helper.ObjName(iface) + "is not migrator")
-}

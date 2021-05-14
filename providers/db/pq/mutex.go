@@ -1,15 +1,14 @@
 package pq
 
 import (
-	//
 	"hash/crc32"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/soldatov-s/go-garage/providers/db"
-
 	"github.com/jmoiron/sqlx"
+	"github.com/pkg/errors"
+	"github.com/soldatov-s/go-garage/providers/db"
 )
 
 const (
@@ -117,11 +116,11 @@ func (m *Mutex) get(dest interface{}, query string) (err error) {
 	return m.conn.Get(dest, query, m.lockID)
 }
 
-func (m *Mutex) commonLock(request string) (err error) {
+func (m *Mutex) commonLock(request string) error {
 	var result bool
 
-	if err = m.get(&result, request); err != nil {
-		return err
+	if err := m.get(&result, request); err != nil {
+		return errors.Wrap(err, "get lock")
 	}
 
 	m.locked = true
@@ -129,7 +128,7 @@ func (m *Mutex) commonLock(request string) (err error) {
 	if !result {
 		for {
 			if err := m.get(&result, request); err != nil {
-				return err
+				return errors.Wrap(err, "get lock")
 			}
 
 			if result || !m.locked {

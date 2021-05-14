@@ -5,6 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/x/helper"
 )
 
 const (
@@ -35,7 +36,7 @@ type Migrator interface {
 	RegisterMigration(connectionName string, migration interface{}) error
 }
 
-// Collector is a controlling structure for all caches.
+// Collector is a controlling structure for all providers.
 type Collector struct {
 	*base.CollectorWithMetrics
 }
@@ -48,7 +49,7 @@ func NewCollector(ctx context.Context) (*Collector, error) {
 	return &Collector{c}, nil
 }
 
-// GetProvider returns requested caches provider. It'll return error if
+// GetProvider returns requested provider. It'll return error if
 // providers wasn't registered.
 func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
 	p, err := c.CollectorWithMetrics.GetProvider(providerName)
@@ -70,11 +71,11 @@ func (c *Collector) GetProvider(providerName string) (ProviderGateway, error) {
 func (c *Collector) AppendToQueue(providerName, connectionName string, queueItem interface{}) error {
 	prov, err := c.GetProvider(providerName)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "get provider")
 	}
 
 	if _, ok := prov.(Bulker); !ok {
-		return ErrNotBulker(prov)
+		return errors.Wrapf(ErrNotBulker, "passed %s", helper.ObjName(prov))
 	}
 
 	return prov.(Bulker).AppendToQueue(connectionName, queueItem)
@@ -85,11 +86,11 @@ func (c *Collector) AppendToQueue(providerName, connectionName string, queueItem
 func (c *Collector) RegisterMigration(providerName, connectionName string, migration interface{}) error {
 	prov, err := c.GetProvider(providerName)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "get provider")
 	}
 
 	if _, ok := prov.(Migrator); !ok {
-		return ErrNotMigrator(prov)
+		return errors.Wrapf(ErrNotMigrator, "passed %s", helper.ObjName(prov))
 	}
 
 	return prov.(Migrator).RegisterMigration(connectionName, migration)
@@ -101,27 +102,27 @@ func (c *Collector) RegisterMigration(providerName, connectionName string, migra
 func (c *Collector) WaitForFlush(providerName, connectionName string) error {
 	prov, err := c.GetProvider(providerName)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "get provider")
 	}
 
 	if _, ok := prov.(Bulker); !ok {
-		return ErrNotBulker(prov)
+		return errors.Wrapf(ErrNotBulker, "passed %s", helper.ObjName(prov))
 	}
 
 	return prov.(Bulker).WaitForFlush(connectionName)
 }
 
-// GetMetrics collect all metrics for Caches
+// GetMetrics collect all metrics for providers
 func (c *Collector) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) {
 	return c.CollectorWithMetrics.GetMetrics(ctx)
 }
 
-// GetAliveHandlers collect all aliveHandlers for Caches
+// GetAliveHandlers collect all aliveHandlers for providers
 func (c *Collector) GetAliveHandlers(ctx context.Context) (base.MapCheckFunc, error) {
 	return c.CollectorWithMetrics.GetAliveHandlers(ctx)
 }
 
-// GetReadyHandlers collect all readyHandlers for Caches
+// GetReadyHandlers collect all readyHandlers for providers
 func (c *Collector) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error) {
 	return c.CollectorWithMetrics.GetReadyHandlers(ctx)
 }
