@@ -22,5 +22,6 @@ require (
 	github.com/vrischmann/envconfig v1.2.0
 	go.mongodb.org/mongo-driver v1.4.4
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
+	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	google.golang.org/grpc v1.27.0
 )

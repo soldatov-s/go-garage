@@ -2,15 +2,12 @@ package pq
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
-	"github.com/pressly/goose"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/db/migrations"
@@ -29,9 +26,6 @@ type Enity struct {
 	*base.EntityWithMetrics
 	Conn *sqlx.DB
 	cfg  *Config
-	// For migration
-	migratedMutex sync.Mutex
-	migrated      bool
 	// Queue for bulk operations
 	queueWorkerStopped bool
 	queue              []*QueueItem
@@ -120,7 +114,8 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 		e.GetLogger(ctx).Info().Msg("database connection established")
 
 		// Migrate database.
-		if err := e.Migrate(ctx); err != nil {
+		m := migrations.NewMigrator(ctx, e.GetFullName(), e.Conn.DB, e.cfg.Migrate)
+		if err := m.Migrate(ctx); err != nil {
 			return errors.Wrap(err, "migrate")
 		}
 
@@ -148,24 +143,6 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	}
 
 	return nil
-}
-
-// WaitForEstablishing will block execution until connection will be
-// successfully established and database migrations will be applied
-// (or rolled back).
-func (e *Enity) WaitForEstablishing(ctx context.Context) {
-	for {
-		e.migratedMutex.Lock()
-		migrated := e.migrated
-		e.migratedMutex.Unlock()
-
-		if e.Conn != nil && migrated {
-			break
-		}
-
-		e.GetLogger(ctx).Debug().Msg("enity isn't ready")
-		time.Sleep(time.Millisecond * 100)
-	}
 }
 
 // Connection watcher goroutine entrypoint.
@@ -214,147 +191,6 @@ func (e *Enity) Ping(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (e *Enity) setMigrationFlag() {
-	e.migratedMutex.Lock()
-	e.migrated = true
-	// After successful migration we should not attempt to migrate it
-	// again if connection to database was re-established.
-	e.cfg.Migrate.Action = migrations.ActionNothing
-	e.migratedMutex.Unlock()
-}
-
-func (e *Enity) waitConn(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if e.Conn != nil {
-				break
-			}
-			return nil
-		}
-		time.Sleep(time.Millisecond * 500)
-	}
-}
-
-func (e *Enity) getCurrentDBVersion(ctx context.Context) int64 {
-	migrationsLog := e.GetLogger(ctx).With().Str("subsystem", "database migrations").Logger()
-
-	currentDBVersion, gooseerr := goose.GetDBVersion(e.Conn.DB)
-	if gooseerr != nil {
-		migrationsLog.Fatal().Err(gooseerr).Msg("failed to get database version")
-	}
-
-	return currentDBVersion
-}
-
-func (e *Enity) migrate(ctx context.Context, currentDBVersion int64) error {
-	var err error
-
-	switch {
-	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count == 0:
-		e.GetLogger(ctx).Info().Msg("applying all unapplied migrations...")
-
-		err = goose.Up(e.Conn.DB, e.cfg.Migrate.Directory)
-	case e.cfg.Migrate.Action == migrations.ActionUp && e.cfg.Migrate.Count != 0:
-		newVersion := currentDBVersion + e.cfg.Migrate.Count
-
-		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("migrating database to specific version")
-
-		err = goose.UpTo(e.Conn.DB, e.cfg.Migrate.Directory, newVersion)
-	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count == 0:
-		e.GetLogger(ctx).Info().Msg("downgrading database to zero state, you'll need to re-apply migrations!")
-
-		err = goose.DownTo(e.Conn.DB, e.cfg.Migrate.Directory, 0)
-
-		e.GetLogger(ctx).Fatal().Msg("database downgraded to zero state, you have to re-apply migrations")
-	case e.cfg.Migrate.Action == migrations.ActionDown && e.cfg.Migrate.Count != 0:
-		newVersion := currentDBVersion - e.cfg.Migrate.Count
-
-		e.GetLogger(ctx).Info().Int64("new version", newVersion).Msg("downgrading database to specific version")
-
-		err = goose.DownTo(e.Conn.DB, e.cfg.Migrate.Directory, newVersion)
-	default:
-		e.GetLogger(ctx).Fatal().
-			Str("action", e.cfg.Migrate.Action).
-			Int64("count", e.cfg.Migrate.Count).
-			Msg("unsupported set of migration parameters, cannot continue")
-	}
-
-	return err
-}
-
-func (e *Enity) migrateSchema(ctx context.Context) error {
-	if e.cfg.Migrate.Schema == "" {
-		return nil
-	}
-
-	_, err := e.Conn.ExecContext(ctx, e.Conn.Rebind("CREATE SCHEMA IF NOT EXISTS "+e.cfg.Migrate.Schema))
-
-	return err
-}
-
-// Migrates database.
-func (e *Enity) Migrate(ctx context.Context) error {
-	if err := e.waitConn(ctx); err != nil {
-		return errors.Wrap(err, "wait connect")
-	}
-	migrationsLog := e.GetLogger(ctx).With().Str("subsystem", "database migrations").Logger()
-
-	err := e.migrateSchema(ctx)
-	if err != nil {
-		return errors.Wrap(err, "execute schema migration")
-	}
-
-	// Ensuring that we're using right database dialect. Without that
-	// errors like:
-	//
-	//   pq: relation "goose_db_version" already exists
-	//
-	// might appear when that relation actually exists.
-	_ = goose.SetDialect("postgres")
-
-	currentDBVersion := e.getCurrentDBVersion(ctx)
-	migrationsLog.Debug().Int64("database version", currentDBVersion).Msg("current database version obtained")
-
-	if err := e.migrate(ctx, currentDBVersion); err != nil {
-		return errors.Wrap(err, "execute migration sequence")
-	}
-
-	migrationsLog.Info().Msg("database migrated successfully")
-	e.setMigrationFlag()
-
-	// Figure out was migrate-only mode requested?
-	if e.cfg.Migrate.Only {
-		migrationsLog.Warn().Msg("only database migrations was requested, shutting down")
-		os.Exit(0)
-	}
-
-	migrationsLog.Info().Msg("migrate-only mode wasn't requested")
-	return nil
-}
-
-// MigrationInCode represents informational struct for database migration
-// that was written as Go code.
-// When using such migrations you should not use SQL migrations as such
-// mix might fuck up everything. This might be changed in future.
-type MigrationInCode struct {
-	Name string
-	Down func(tx *sql.Tx) error
-	Up   func(tx *sql.Tx) error
-}
-
-func (e *Enity) RegisterMigration(migration *MigrationInCode) {
-	goose.AddNamedMigration(migration.Name, migration.Up, migration.Down)
-}
-
-// SetSchema sets schema for migrations.
-func (e *Enity) SetSchema(schema string) {
-	e.cfg.Migrate.Schema = schema
-	goose.SetTableName(schema + ".goose_db_version")
 }
 
 // createMutexConnect initialize connection for mutex
@@ -454,7 +290,7 @@ func (e *Enity) startQueueWorker(ctx context.Context) error {
 			return ctx.Err()
 		default:
 			if err := e.workWithQueue(ctx); err != nil {
-				return errors.Wrap(err, "work queue")
+				e.GetLogger(ctx).Error().Err(err).Msg("work queue")
 			}
 		}
 		time.Sleep(e.cfg.QueueWorkerTimeout)

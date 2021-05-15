@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/db"
+	"github.com/soldatov-s/go-garage/providers/db/migrations"
 	"github.com/soldatov-s/go-garage/x/helper"
 )
 
@@ -87,18 +88,13 @@ func (p *Provider) AppendToQueue(connectionName string, item interface{}) error 
 // It is up to provider to provide instructions about working with
 // migrations and how to put them into migration interface. It is
 // recommended to use separate structure.
-func (p *Provider) RegisterMigration(connectionName string, migration interface{}) error {
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
-
-	migrationStruct, ok := migration.(*MigrationInCode)
+func (p *Provider) RegisterMigration(enityName string, migration interface{}) error {
+	migrationStruct, ok := migration.(*migrations.InCode)
 	if !ok {
-		return errors.Wrapf(base.ErrInvalidPointer, "expect %q", helper.ObjName(MigrationInCode{}))
+		return errors.Wrapf(base.ErrInvalidPointer, "expect %q", helper.ObjName(migrations.InCode{}))
 	}
 
-	conn.RegisterMigration(migrationStruct)
+	migrations.RegisterMigration(migrationStruct)
 
 	return nil
 }
