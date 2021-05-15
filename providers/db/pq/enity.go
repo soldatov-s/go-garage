@@ -114,7 +114,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 		e.GetLogger(ctx).Info().Msg("database connection established")
 
 		// Migrate database.
-		m := migrations.NewMigrator(ctx, e.GetFullName(), e.Conn.DB, e.cfg.Migrate)
+		m := migrations.NewMigrator(ctx, e.GetFullName(), "postgres", e.Conn.DB, e.cfg.Migrate)
 		if err := m.Migrate(ctx); err != nil {
 			return errors.Wrap(err, "migrate")
 		}

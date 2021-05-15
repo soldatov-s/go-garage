@@ -85,17 +85,19 @@ type Migrator struct {
 	migratedMutex sync.Mutex
 	migrated      bool
 	name          string
+	dialect       string
 }
 
-func NewMigrator(ctx context.Context, name string, conn *sql.DB, cfg *Config) *Migrator {
+func NewMigrator(ctx context.Context, name, dialect string, conn *sql.DB, cfg *Config) *Migrator {
 	log.FromContext(ctx).
 		GetLogger(name+"_"+"migrator", &log.Field{Name: "subsystem", Value: "database migrations"}).
 		Info().Msgf("initializing...")
 
 	return &Migrator{
-		name: name,
-		db:   conn,
-		cfg:  cfg,
+		name:    name,
+		db:      conn,
+		cfg:     cfg,
+		dialect: dialect,
 	}
 }
 
@@ -117,7 +119,7 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 	//   pq: relation "goose_db_version" already exists
 	//
 	// might appear when that relation actually exists.
-	_ = goose.SetDialect("postgres")
+	_ = goose.SetDialect(m.dialect)
 
 	currentDBVersion := m.getCurrentDBVersion(ctx)
 	logger.Debug().Int64("database version", currentDBVersion).Msg("current database version obtained")
