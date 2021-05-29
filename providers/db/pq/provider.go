@@ -8,6 +8,7 @@ import (
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/providers/db/migrations"
+	"github.com/soldatov-s/go-garage/providers/db/sql"
 	"github.com/soldatov-s/go-garage/x/helper"
 )
 
@@ -67,23 +68,6 @@ func (p *Provider) GetEnity(enityName string) (interface{}, error) {
 	return p.getEnity(enityName)
 }
 
-// AppendToQueue adds passed item into processing queue.
-func (p *Provider) AppendToQueue(connectionName string, item interface{}) error {
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
-
-	itemPointer, ok := item.(*QueueItem)
-	if !ok {
-		return errors.Wrapf(base.ErrInvalidPointer, "expect %q", helper.ObjName(QueueItem{}))
-	}
-
-	conn.AppendToQueue(itemPointer)
-
-	return nil
-}
-
 // RegisterMigration registers migration for specified connection.
 // It is up to provider to provide instructions about working with
 // migrations and how to put them into migration interface. It is
@@ -107,7 +91,7 @@ func (p *Provider) WaitForFlush(ctx context.Context, connectionName string) erro
 	}
 
 	waitChan := make(chan bool)
-	item := &QueueItem{IsWaitForFlush: true, WaitForFlush: waitChan}
+	item := &sql.QueueItem{IsWaitForFlush: true, WaitForFlush: waitChan}
 	conn.AppendToQueue(item)
 	<-waitChan
 	p.GetLogger(ctx).Debug().Msg("data flushed to database")

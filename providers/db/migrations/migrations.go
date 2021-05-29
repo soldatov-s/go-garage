@@ -113,13 +113,9 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 		return errors.Wrap(err, "execute schema migration")
 	}
 
-	// Ensuring that we're using right database dialect. Without that
-	// errors like:
-	//
-	//   pq: relation "goose_db_version" already exists
-	//
-	// might appear when that relation actually exists.
-	_ = goose.SetDialect(m.dialect)
+	if err := goose.SetDialect(m.dialect); err != nil {
+		return errors.Wrap(err, "set dialect")
+	}
 
 	currentDBVersion := m.getCurrentDBVersion(ctx)
 	logger.Debug().Int64("database version", currentDBVersion).Msg("current database version obtained")
