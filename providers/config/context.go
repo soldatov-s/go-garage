@@ -7,8 +7,8 @@ import (
 	"github.com/soldatov-s/go-garage/providers/base"
 )
 
-func NewContext(ctx context.Context) (context.Context, error) {
-	return base.NewContextByName(ctx, CollectorName, NewCollector(ctx))
+func NewContext(ctx context.Context, cfg interface{}) (context.Context, error) {
+	return base.NewContextByName(ctx, CollectorName, NewCollector(cfg))
 }
 
 func FromContext(ctx context.Context) (*Collector, error) {
