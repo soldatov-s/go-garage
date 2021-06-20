@@ -19,6 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -75,55 +76,54 @@ func (e *Enity) Shutdown(ctx context.Context) error {
 }
 
 // Start starts connection workers and connection procedure itself.
-func (e *Enity) Start(ctx context.Context) error {
+func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
+	// If connection is nil - try to establish
+	// connection.
+	if e.Conn == nil {
+		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
+		// Connect to database.
+		cs, err := connstring.ParseAndValidate(e.cfg.ComposeDSN())
+		if err != nil {
+			return errors.Wrap(err, "parse dsn")
+		}
+		e.dbName = cs.Database
+
+		e.Conn, err = mongo.Connect(ctx, options.Client().ApplyURI(e.cfg.ComposeDSN()))
+		if err != nil {
+			return errors.Wrap(err, "connect to enity")
+		}
+		e.GetLogger(ctx).Info().Msg("database connection established")
+	}
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.ConnWatcherStopped {
-		if e.cfg.StartWatcher {
-			e.ConnWatcherStopped = false
-			go e.startWatcher(ctx)
-		} else {
-			// Manually start the connection once to establish connection
-			_ = e.watcher(ctx)
-		}
+		e.ConnWatcherStopped = false
+		errorGroup.Go(func() error {
+			return e.startWatcher(ctx)
+		})
 	}
 
 	return nil
 }
 
-// WaitForEstablishing will block execution until connection will be
-// successfully established and database migrations will be applied
-// (or rolled back).
-func (e *Enity) WaitForEstablishing(ctx context.Context) {
-	for {
-		if e.Conn != nil {
-			break
-		}
-
-		e.GetLogger(ctx).Debug().Msg("enity isn't ready")
-		time.Sleep(time.Millisecond * 100)
-	}
-}
-
 // Connection watcher goroutine entrypoint.
-func (e *Enity) startWatcher(ctx context.Context) {
+func (e *Enity) startWatcher(ctx context.Context) error {
 	e.GetLogger(ctx).Info().Msg("starting connection watcher")
 
-	ticker := time.NewTicker(e.cfg.Timeout)
-
-	// First start - manually.
-	_ = e.watcher(ctx)
-
-	// Then - every ticker tick.
-	for range ticker.C {
-		if e.watcher(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("connection watcher stopped")
+			e.ConnWatcherStopped = true
+			return ctx.Err()
+		default:
+			if err := e.Ping(ctx); err != nil {
+				e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
+			}
 		}
+		time.Sleep(e.cfg.Timeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("connection watcher stopped and connection to database was shutted down")
-	e.ConnWatcherStopped = true
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
@@ -143,7 +143,7 @@ func (e *Enity) shutdown(ctx context.Context) error {
 }
 
 // Pinging connection if it's alive (or we think so).
-func (e *Enity) ping(ctx context.Context) error {
+func (e *Enity) Ping(ctx context.Context) error {
 	if e.Conn == nil {
 		return nil
 	}
@@ -153,48 +153,6 @@ func (e *Enity) ping(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Connection watcher itself.
-func (e *Enity) watcher(ctx context.Context) bool {
-	// If we're shutting down - stop connection watcher.
-	if e.WeAreShuttingDown {
-		_ = e.shutdown(ctx)
-		return true
-	}
-
-	if err := e.ping(ctx); err != nil {
-		e.GetLogger(ctx).Error().Err(err).Msg("database connection lost")
-	}
-
-	// If connection is nil - try to establish
-	// connection.
-	if e.Conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
-		// Connect to database.
-		cs, err := connstring.ParseAndValidate(e.cfg.ComposeDSN())
-		if err == nil {
-			dbConn, err := mongo.Connect(ctx, options.Client().ApplyURI(e.cfg.ComposeDSN()))
-			if err == nil {
-				e.GetLogger(ctx).Info().Msg("database connection established")
-				e.Conn = dbConn
-				e.dbName = cs.Database
-				return false
-			}
-
-			if !e.cfg.StartWatcher {
-				e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to database")
-				return true
-			}
-
-			e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to database, reconnect after %d seconds", e.cfg.Timeout)
-			return true
-		}
-
-		e.GetLogger(ctx).Err(err).Msgf("failed to parse uri")
-		return true
-	}
-	return false
 }
 
 // GetMetrics return map of the metrics from database connection
@@ -208,7 +166,7 @@ func (e *Enity) GetMetrics(ctx context.Context) base.MapMetricsOptions {
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(0)
 			if e.Conn != nil {
-				err := e.ping(ctx)
+				err := e.Ping(ctx)
 				if err == nil {
 					(m.(prometheus.Gauge)).Set(1)
 				}
@@ -226,7 +184,7 @@ func (e *Enity) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error)
 			return false, "not connected"
 		}
 
-		if err := e.ping(ctx); err != nil {
+		if err := e.Ping(ctx); err != nil {
 			return false, err.Error()
 		}
 
@@ -235,19 +193,19 @@ func (e *Enity) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error)
 	return e.ReadyHandlers, nil
 }
 
-func (c *Enity) newBucket() (*gridfs.Bucket, error) {
-	if c.bucket != nil {
-		return c.bucket, nil
+func (e *Enity) newBucket() (*gridfs.Bucket, error) {
+	if e.bucket != nil {
+		return e.bucket, nil
 	}
 
-	bucket, err := gridfs.NewBucket(c.Conn.Database(c.dbName))
+	bucket, err := gridfs.NewBucket(e.Conn.Database(e.dbName))
 	if err != nil {
 		return nil, err
 	}
 
-	c.bucket = bucket
+	e.bucket = bucket
 
-	return c.bucket, nil
+	return e.bucket, nil
 }
 
 func (e *Enity) writeToGridFile(ctx context.Context, fileName string, file multipart.File, gridFile *gridfs.UploadStream) (int, error) {

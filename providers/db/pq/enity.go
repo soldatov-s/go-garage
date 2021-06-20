@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
+	"github.com/soldatov-s/go-garage/providers/db"
 	"github.com/soldatov-s/go-garage/providers/db/migrations"
 	"github.com/soldatov-s/go-garage/providers/db/sql"
 	"github.com/soldatov-s/go-garage/utils"
@@ -32,8 +33,8 @@ type Enity struct {
 }
 
 // NewEnity create new enity.
-func NewEnity(ctx context.Context, collectorName, providerName, name string, cfg interface{}) (*Enity, error) {
-	e, err := base.NewEntityWithMetrics(ctx, collectorName, providerName, name)
+func NewEnity(ctx context.Context, name string, cfg interface{}) (*Enity, error) {
+	e, err := base.NewEntityWithMetrics(ctx, db.CollectorName, ProviderName, name)
 	if err != nil {
 		return nil, errors.Wrap(err, "create base enity")
 	}
@@ -103,14 +104,14 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	// If connection is nil - try to establish (or reestablish)
 	// connection.
 	if e.Conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
+		e.GetLogger(ctx).Info().Msg("establishing connection...")
 		// Connect to database.
 		var err error
 		e.Conn, err = sqlx.Connect("postgres", e.cfg.ComposeDSN())
 		if err != nil {
 			return errors.Wrap(err, "connect to enity")
 		}
-		e.GetLogger(ctx).Info().Msg("database connection established")
+		e.GetLogger(ctx).Info().Msg("connection established")
 		e.queue = sql.NewQueue(e.Conn)
 
 		// Migrate database.

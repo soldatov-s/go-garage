@@ -6,7 +6,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/db"
-	"github.com/soldatov-s/go-garage/providers/msgs"
 	"github.com/soldatov-s/go-garage/x/helper"
 )
 
@@ -68,29 +67,4 @@ func (p *Provider) getEnity(enityName string) (*Enity, error) {
 // GetEnity should return pointer to connection structure to caller.
 func (p *Provider) GetEnity(enityName string) (interface{}, error) {
 	return p.getEnity(enityName)
-}
-
-// SendMessage send message.
-func (p *Provider) SendMessage(ctx context.Context, connectionName string, message interface{}) error {
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
-
-	return conn.SendMessage(ctx, message)
-}
-
-// Subscribe subscribe for reciving messages.
-func (p *Provider) Subscribe(ctx context.Context, connectionName string, options interface{}) error {
-	subscribeOptions, ok := options.(SubscribeOptions)
-	if !ok {
-		return msgs.ErrInvalidSubscribeOptionsPointer
-	}
-
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return err
-	}
-
-	return conn.Subscribe(ctx, subscribeOptions)
 }

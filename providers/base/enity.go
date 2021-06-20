@@ -5,7 +5,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-	"github.com/soldatov-s/go-garage/log"
 	"github.com/soldatov-s/go-garage/utils"
 )
 
@@ -48,9 +47,8 @@ func NewEnity(ctx context.Context, collectorName, providerName, name string) (*E
 		ConnWatcherStopped: true,
 	}
 
-	log.FromContext(ctx).
-		GetLogger(e.collectorName+"_"+e.providerName+"_"+e.name, &log.Field{Name: "enity", Value: name}).
-		Info().Msgf("initializing...")
+	logger := e.GetLogger(ctx)
+	logger.Info().Msgf("initializing...")
 
 	return e, nil
 }
@@ -64,7 +62,9 @@ func (e *Enity) GetFullName() string {
 }
 
 func (e *Enity) GetLogger(ctx context.Context) *zerolog.Logger {
-	return log.FromContext(ctx).GetLogger(e.GetFullName())
+	logger := zerolog.Ctx(ctx).With().Logger()
+	logger = logger.With().Str("provider_type", e.collectorName).Str("provider_name", e.providerName).Str("enity_name", e.name).Logger()
+	return &logger
 }
 
 type EntityWithMetrics struct {

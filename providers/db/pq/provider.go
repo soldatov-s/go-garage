@@ -2,7 +2,6 @@ package pq
 
 import (
 	"context"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/providers/base"
@@ -38,7 +37,7 @@ func (p *Provider) CreateEnity(ctx context.Context, enityName string, options in
 		return base.ErrDuplicateEnity
 	}
 
-	enity, err := NewEnity(ctx, db.CollectorName, ProviderName, enityName, options)
+	enity, err := NewEnity(ctx, enityName, options)
 	if err != nil {
 		return errors.Wrap(err, "create enity")
 	}
@@ -97,19 +96,4 @@ func (p *Provider) WaitForFlush(ctx context.Context, connectionName string) erro
 	p.GetLogger(ctx).Debug().Msg("data flushed to database")
 
 	return nil
-}
-
-// NewMutex creates new distributed mutex
-func (p *Provider) NewMutex(connectionName string, checkInterval time.Duration) (*Mutex, error) {
-	return p.NewMutexByID(connectionName, defaultLockID, checkInterval)
-}
-
-// NewMutexByID creates new distributed postgresql mutex by ID
-func (p *Provider) NewMutexByID(connectionName string, lockID int64, checkInterval time.Duration) (*Mutex, error) {
-	conn, err := p.getEnity(connectionName)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn.NewMutexByID(lockID, checkInterval)
 }
