@@ -2,6 +2,8 @@ package email
 
 import (
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 const (
@@ -12,19 +14,28 @@ const (
 	YAHOO      = "yahoo.com"
 )
 
+// Parse email
+func Parse(email string) (user, domain string, err error) {
+	// validate email
+	strs := strings.Split(email, "@")
+	if len(strs) < 2 {
+		return "", "", ErrNormilizeEmail
+	}
+
+	user = strs[0]
+	domain = strs[1]
+	return user, domain, nil
+}
+
 // Normalize normilizes email address to form name@domain
 func Normilize(email string) (string, error) {
 	// all_lowercase
 	normEmail := strings.ToLower(email)
 
-	// validate email
-	strs := strings.Split(normEmail, "@")
-	if len(strs) < 2 {
-		return "", ErrNormilizeEmail
+	user, domain, err := Parse(normEmail)
+	if err != nil {
+		return "", errors.Wrap(err, "parse email")
 	}
-
-	user := strs[0]
-	domain := strs[1]
 
 	// Converts addresses with domain @googlemail.com to @gmail.com, as they're equivalent.
 	domain = strings.ReplaceAll(domain, GOOGLEMAIL, GMAIL)
