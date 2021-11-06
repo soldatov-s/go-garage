@@ -21,19 +21,10 @@ type ProviderGateway interface {
 	Shutdown() error
 }
 
-type CollectorGateway interface {
-	AddProvider(providerName string, iface interface{}) error
-	GetProviders() *sync.Map
-	Start(ctx context.Context) error
-	Shutdown(ctx context.Context) error
-}
-
 type Collector struct {
 	providers sync.Map
 	name      string
 }
-
-var _ CollectorGateway = &Collector{}
 
 // Initialize initializes  controlling structure.
 func NewCollector(ctx context.Context, name string) (*Collector, error) {
@@ -47,16 +38,14 @@ func NewCollector(ctx context.Context, name string) (*Collector, error) {
 }
 
 // AddProvider registers provider. If provider with passed
-// name already registered return error.
+// name already registered will be used old provider.
 func (c *Collector) AddProvider(providerName string, iface interface{}) error {
 	// We should not attempt to register providers with empty names.
 	if providerName == "" {
 		return ErrEmptyProviderName
 	}
 
-	if _, found := c.providers.LoadOrStore(providerName, iface); found {
-		return errors.Wrapf(ErrProviderAlreadyRegistered, "providerName %q", providerName)
-	}
+	_, _ = c.providers.LoadOrStore(providerName, iface)
 
 	return nil
 }
@@ -193,20 +182,6 @@ type ProviderMetricsGateway interface {
 	GetReadyHandlers(ctx context.Context) MapCheckFunc
 }
 
-type CollectorMetricsGateway interface {
-	// GetMetrics return map of the metrics from provider
-	GetMetrics(ctx context.Context) (MapMetricsOptions, error)
-	// GetAliveHandlers return array of the aliveHandlers from provider
-	GetAliveHandlers(ctx context.Context) (MapCheckFunc, error)
-	// GetReadyHandlers return array of the readyHandlers from provider
-	GetReadyHandlers(ctx context.Context) (MapCheckFunc, error)
-}
-
-type CollectorWithMetricsGateway interface {
-	CollectorGateway
-	CollectorMetricsGateway
-}
-
 type CollectorWithMetrics struct {
 	*Collector
 }
@@ -231,7 +206,7 @@ func (c *CollectorWithMetrics) GetMetrics(ctx context.Context) (MapMetricsOption
 		if err != nil {
 			return false
 		}
-		metrics.Add(m)
+		metrics.Append(m)
 		return true
 	})
 
@@ -248,7 +223,7 @@ func (c *CollectorWithMetrics) GetAliveHandlers(ctx context.Context) (MapCheckFu
 		if err != nil {
 			return false
 		}
-		handlers.Add(h)
+		handlers.Append(h)
 		return true
 	})
 	return handlers, err
@@ -264,7 +239,7 @@ func (c *CollectorWithMetrics) GetReadyHandlers(ctx context.Context) (MapCheckFu
 		if err != nil {
 			return false
 		}
-		handlers.Add(h)
+		handlers.Append(h)
 		return true
 	})
 	return handlers, err

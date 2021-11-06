@@ -61,14 +61,14 @@ func NewQueue(db *sqlx.DB) *Queue {
 }
 
 func (q *Queue) AppendToQueue(queueItem *QueueItem) {
-	defer q.queueMutex.Unlock()
 	q.queueMutex.Lock()
+	defer q.queueMutex.Unlock()
 	q.queue = append(q.queue, queueItem)
 }
 
 func (q *Queue) RecreateQueue() {
-	defer q.queueMutex.Unlock()
 	q.queueMutex.Lock()
+	defer q.queueMutex.Unlock()
 	q.queue = make([]*QueueItem, 0, 10240)
 }
 

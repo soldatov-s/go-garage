@@ -20,7 +20,7 @@ import (
 // specified connection.
 type Enity struct {
 	*base.EntityWithMetrics
-	Conn *rejson.Client
+	conn *rejson.Client
 	cfg  *Config
 }
 
@@ -38,6 +38,16 @@ func NewEnity(ctx context.Context, collectorName, providerName, name string, cfg
 	}
 
 	return &Enity{EntityWithMetrics: e, cfg: config.SetDefault()}, nil
+}
+
+// GetConn return enity connection
+func (e *Enity) GetConn() *rejson.Client {
+	return e.conn
+}
+
+// GetConfig return enity config
+func (e *Enity) GetConfig() *Config {
+	return e.cfg
 }
 
 // Shutdown shutdowns queue worker and connection watcher. Later will also
@@ -67,8 +77,8 @@ func (e *Enity) SetConnPoolLifetime(connMaxLifetime time.Duration) {
 	e.cfg.MaxConnectionLifetime = connMaxLifetime
 
 	// If connection already established - tweak it.
-	if e.Conn != nil {
-		e.Conn.Options().MaxConnAge = connMaxLifetime
+	if e.conn != nil {
+		e.conn.Options().MaxConnAge = connMaxLifetime
 	}
 }
 
@@ -79,9 +89,9 @@ func (e *Enity) SetConnPoolLimits(minIdleConnections, maxOpenedConnections int) 
 	e.cfg.MaxOpenedConnections = maxOpenedConnections
 
 	// If connection already established - tweak it.
-	if e.Conn != nil {
-		e.Conn.Options().MinIdleConns = minIdleConnections
-		e.Conn.Options().PoolSize = maxOpenedConnections
+	if e.conn != nil {
+		e.conn.Options().MinIdleConns = minIdleConnections
+		e.conn.Options().PoolSize = maxOpenedConnections
 	}
 }
 
@@ -112,7 +122,7 @@ func (e *Enity) Start(ctx context.Context) error {
 // successfully established.
 func (e *Enity) WaitForEstablishing(ctx context.Context) {
 	for {
-		if e.Conn != nil {
+		if e.conn != nil {
 			break
 		}
 
@@ -123,7 +133,7 @@ func (e *Enity) WaitForEstablishing(ctx context.Context) {
 
 // Get item from cache by key.
 func (e *Enity) Get(ctx context.Context, key string, value interface{}) error {
-	cmdString := e.Conn.Get(ctx, e.cfg.KeyPrefix+key)
+	cmdString := e.conn.Get(ctx, e.cfg.KeyPrefix+key)
 	if _, err := cmdString.Result(); err != nil {
 		return cache.ErrNotFoundInCache
 	}
@@ -138,7 +148,7 @@ func (e *Enity) Get(ctx context.Context, key string, value interface{}) error {
 
 // JSONGet item from cache by key.
 func (e *Enity) JSONGet(ctx context.Context, key, path string, value interface{}) error {
-	cmdString := e.Conn.JSONGet(ctx, e.cfg.KeyPrefix+key, path)
+	cmdString := e.conn.JSONGet(ctx, e.cfg.KeyPrefix+key, path)
 	if _, err := cmdString.Result(); err != nil {
 		return cache.ErrNotFoundInCache
 	}
@@ -153,7 +163,7 @@ func (e *Enity) JSONGet(ctx context.Context, key, path string, value interface{}
 
 // Set item in cache by key.
 func (e *Enity) Set(ctx context.Context, key string, value interface{}) error {
-	if _, err := e.Conn.Set(ctx, e.cfg.KeyPrefix+key, value, e.cfg.ClearTime).Result(); err != nil {
+	if _, err := e.conn.Set(ctx, e.cfg.KeyPrefix+key, value, e.cfg.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "set key")
 	}
 
@@ -163,7 +173,7 @@ func (e *Enity) Set(ctx context.Context, key string, value interface{}) error {
 
 // SetNX (Not eXist) item in cache by key.
 func (e *Enity) SetNX(ctx context.Context, key string, value interface{}) error {
-	if _, err := e.Conn.SetNX(ctx, e.cfg.KeyPrefix+key, value, e.cfg.ClearTime).Result(); err != nil {
+	if _, err := e.conn.SetNX(ctx, e.cfg.KeyPrefix+key, value, e.cfg.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "setNX key")
 	}
 
@@ -173,12 +183,12 @@ func (e *Enity) SetNX(ctx context.Context, key string, value interface{}) error 
 
 // JSONSet item in cache by key.
 func (e *Enity) JSONSet(ctx context.Context, key, path, json string) error {
-	if _, err := e.Conn.JSONSet(ctx, e.cfg.KeyPrefix+key, path, json).Result(); err != nil {
+	if _, err := e.conn.JSONSet(ctx, e.cfg.KeyPrefix+key, path, json).Result(); err != nil {
 		return errors.Wrap(err, "JSONSet key")
 	}
 
 	if e.cfg.ClearTime > 0 {
-		_, err := e.Conn.Expire(ctx, e.cfg.KeyPrefix+key, e.cfg.ClearTime).Result()
+		_, err := e.conn.Expire(ctx, e.cfg.KeyPrefix+key, e.cfg.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -190,12 +200,12 @@ func (e *Enity) JSONSet(ctx context.Context, key, path, json string) error {
 
 // JSONSetNX item in cache by key.
 func (e *Enity) JSONSetNX(ctx context.Context, key, path, json string) error {
-	if _, err := e.Conn.JSONSet(ctx, e.cfg.KeyPrefix+key, path, json, "NX").Result(); err != nil {
+	if _, err := e.conn.JSONSet(ctx, e.cfg.KeyPrefix+key, path, json, "NX").Result(); err != nil {
 		return errors.Wrap(err, "JSONSetNX key")
 	}
 
 	if e.cfg.ClearTime > 0 {
-		_, err := e.Conn.Expire(ctx, e.cfg.KeyPrefix+key, e.cfg.ClearTime).Result()
+		_, err := e.conn.Expire(ctx, e.cfg.KeyPrefix+key, e.cfg.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -207,7 +217,7 @@ func (e *Enity) JSONSetNX(ctx context.Context, key, path, json string) error {
 
 // Delete item from cache by key.
 func (e *Enity) Delete(ctx context.Context, key string) error {
-	if _, err := e.Conn.Del(ctx, e.cfg.KeyPrefix+key).Result(); err != nil {
+	if _, err := e.conn.Del(ctx, e.cfg.KeyPrefix+key).Result(); err != nil {
 		return errors.Wrap(err, "del key")
 	}
 
@@ -222,7 +232,7 @@ func (e *Enity) Size(ctx context.Context) (int, error) {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = e.Conn.Scan(ctx, cursor, e.cfg.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = e.conn.Scan(ctx, cursor, e.cfg.KeyPrefix+"*", 10).Result()
 		if err != nil {
 			return -1, errors.Wrap(err, "scan keys")
 		}
@@ -243,7 +253,7 @@ func (e *Enity) Clear(ctx context.Context) error {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = e.Conn.Scan(ctx, cursor, e.cfg.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = e.conn.Scan(ctx, cursor, e.cfg.KeyPrefix+"*", 10).Result()
 		if err != nil {
 			return err
 		}
@@ -252,13 +262,13 @@ func (e *Enity) Clear(ctx context.Context) error {
 			continue
 		}
 
-		pipe := e.Conn.Pipeline()
+		pipe := e.conn.Pipeline()
 		err = pipe.Del(ctx, keys...).Err()
 		if err != nil {
 			return err
 		}
 
-		_, err = pipe.Exec(e.Conn.Context())
+		_, err = pipe.Exec(e.conn.Context())
 		if err != nil {
 			return err
 		}
@@ -292,28 +302,28 @@ func (e *Enity) startWatcher(ctx context.Context) {
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
-	if e.Conn == nil {
+	if e.conn == nil {
 		return nil
 	}
 
 	e.GetLogger(ctx).Info().Msg("closing connection...")
 
-	if err := e.Conn.Close(); err != nil {
+	if err := e.conn.Close(); err != nil {
 		return errors.Wrap(err, "failed to close connection")
 	}
 
-	e.Conn = nil
+	e.conn = nil
 
 	return nil
 }
 
 // Pinging connection if it's alive (or we think so).
 func (e *Enity) ping(ctx context.Context) error {
-	if e.Conn == nil {
+	if e.conn == nil {
 		return nil
 	}
 
-	if _, err := e.Conn.Ping(ctx).Result(); err != nil {
+	if _, err := e.conn.Ping(ctx).Result(); err != nil {
 		return errors.Wrap(err, "ping connection")
 	}
 
@@ -334,7 +344,7 @@ func (e *Enity) watcher(ctx context.Context) bool {
 
 	// If connection is nil - try to establish
 	// connection.
-	if e.Conn == nil {
+	if e.conn == nil {
 		e.GetLogger(ctx).Info().Msg("establishing connection ...")
 
 		// Connect to database.
@@ -351,7 +361,7 @@ func (e *Enity) watcher(ctx context.Context) bool {
 		conn := redis.NewClient(connOptions)
 		if conn.Ping(conn.Context()).Err() == nil {
 			e.GetLogger(ctx).Info().Msg("connection established")
-			e.Conn = rejson.ExtendClient(conn)
+			e.conn = rejson.ExtendClient(conn)
 			return false
 		}
 		if !e.cfg.StartWatcher {
@@ -366,12 +376,12 @@ func (e *Enity) watcher(ctx context.Context) bool {
 
 // NewMutex create new redis mutex
 func (e *Enity) NewMutex(expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutex(e.Conn, expire, checkInterval)
+	return NewMutex(e.conn, expire, checkInterval)
 }
 
 // NewMutexByID create new redis mutex with selected id
 func (e *Enity) NewMutexByID(lockID string, expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutexByID(e.Conn, lockID, expire, checkInterval)
+	return NewMutexByID(e.conn, lockID, expire, checkInterval)
 }
 
 // GetMetrics return map of the metrics from cache connection
@@ -384,7 +394,7 @@ func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) 
 			}),
 		MetricFunc: func(m interface{}) {
 			(m.(prometheus.Gauge)).Set(0)
-			if e.Conn != nil {
+			if e.conn != nil {
 				err := e.ping(ctx)
 				if err == nil {
 					(m.(prometheus.Gauge)).Set(1)
@@ -411,7 +421,7 @@ func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) 
 // GetReadyHandlers return array of the readyHandlers from database connection
 func (e *Enity) GetReadyHandlers(ctx context.Context) (base.MapCheckFunc, error) {
 	e.ReadyHandlers[strings.ToUpper(e.GetFullName()+"_notfailed")] = func() (bool, string) {
-		if e.Conn == nil {
+		if e.conn == nil {
 			return false, "not connected"
 		}
 

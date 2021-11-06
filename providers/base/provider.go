@@ -147,7 +147,7 @@ func (p *ProviderWithMetrics) GetMetrics(ctx context.Context) (MapMetricsOptions
 		if err != nil {
 			return false
 		}
-		metrics.Add(m)
+		metrics.Append(m)
 		return true
 	})
 
@@ -164,7 +164,7 @@ func (p *ProviderWithMetrics) GetAliveHandlers(ctx context.Context) (MapCheckFun
 		if err != nil {
 			return false
 		}
-		handlers.Add(h)
+		handlers.Append(h)
 		return true
 	})
 	return handlers, err
@@ -180,7 +180,7 @@ func (p *ProviderWithMetrics) GetReadyHandlers(ctx context.Context) (MapCheckFun
 		if err != nil {
 			return false
 		}
-		handlers.Add(h)
+		handlers.Append(h)
 		return true
 	})
 	return handlers, err
