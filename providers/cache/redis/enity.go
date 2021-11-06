@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/providers/cache"
 	"github.com/soldatov-s/go-garage/utils"
@@ -386,34 +385,30 @@ func (e *Enity) NewMutexByID(lockID string, expire, checkInterval time.Duration)
 
 // GetMetrics return map of the metrics from cache connection
 func (e *Enity) GetMetrics(ctx context.Context) (base.MapMetricsOptions, error) {
-	e.Metrics[e.GetFullName()+"_status"] = &base.MetricOptions{
-		Metric: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: e.GetFullName() + "_status",
-				Help: utils.JoinStrings(" ", e.GetFullName(), "status link to", utils.RedactedDSN(e.cfg.DSN)),
-			}),
-		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
+	e.Metrics.AddNewMetricGauge(
+		e.GetFullName(),
+		"status",
+		utils.JoinStrings(" ", "status link to", utils.RedactedDSN(e.cfg.DSN)),
+		func() float64 {
 			if e.conn != nil {
 				err := e.ping(ctx)
 				if err == nil {
-					(m.(prometheus.Gauge)).Set(1)
+					return 1
 				}
 			}
+			return 0
 		},
-	}
+	)
 
-	e.Metrics[e.GetFullName()+"_cache_size"] = &base.MetricOptions{
-		Metric: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: e.GetFullName() + "_cache_size",
-				Help: utils.JoinStrings(" ", e.GetFullName(), "cache size"),
-			}),
-		MetricFunc: func(m interface{}) {
+	e.Metrics.AddNewMetricGauge(
+		e.GetFullName(),
+		"cache size",
+		"cache size",
+		func() float64 {
 			size, _ := e.Size(ctx)
-			(m.(prometheus.Gauge)).Set(float64(size))
+			return float64(size)
 		},
-	}
+	)
 
 	return e.Metrics, nil
 }

@@ -15,7 +15,7 @@ type MetricOptions struct {
 	MetricFunc func(metric interface{})
 }
 
-func NewMetricOptionsGauge(fullName, postfix, help string, value float64) *MetricOptions {
+func NewMetricOptionsGauge(fullName, postfix, help string, f func() float64) *MetricOptions {
 	return &MetricOptions{
 		Metric: prometheus.NewGauge(
 			prometheus.GaugeOpts{
@@ -23,7 +23,7 @@ func NewMetricOptionsGauge(fullName, postfix, help string, value float64) *Metri
 				Help: utils.JoinStrings(" ", fullName, help),
 			}),
 		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(value)
+			(m.(prometheus.Gauge)).Set(f())
 		},
 	}
 }
@@ -45,8 +45,8 @@ func (mmo MapMetricsOptions) Add(key string, metric *MetricOptions) {
 	mmo[key] = metric
 }
 
-func (mmo MapMetricsOptions) AddNewMetricGauge(fullName, postfix, help string, value float64) {
-	mmo[fullName+preparePotfix(postfix)] = NewMetricOptionsGauge(fullName, postfix, help, value)
+func (mmo MapMetricsOptions) AddNewMetricGauge(fullName, postfix, help string, f func() float64) {
+	mmo[fullName+preparePotfix(postfix)] = NewMetricOptionsGauge(fullName, postfix, help, f)
 }
 
 // Checking function should accept no parameters and return

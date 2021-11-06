@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soldatov-s/go-garage/providers/base"
 	"github.com/soldatov-s/go-garage/utils"
 	"github.com/soldatov-s/go-garage/x/helper"
@@ -349,20 +348,18 @@ func (e *Enity) Ping(ctx context.Context) (err error) {
 
 // GetMetrics return map of the metrics from database connection
 func (e *Enity) GetMetrics(ctx context.Context) base.MapMetricsOptions {
-	e.Metrics[e.GetFullName()+"_status"] = &base.MetricOptions{
-		Metric: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: e.GetFullName() + "_status",
-				Help: utils.JoinStrings(" ", e.GetFullName(), "status link to", utils.RedactedDSN(e.cfg.DSN)),
-			}),
-		MetricFunc: func(m interface{}) {
-			(m.(prometheus.Gauge)).Set(0)
+	e.Metrics.AddNewMetricGauge(
+		e.GetFullName(),
+		"status",
+		utils.JoinStrings(" ", "status link to", utils.RedactedDSN(e.cfg.DSN)),
+		func() float64 {
 			err := e.Ping(ctx)
 			if err == nil {
-				(m.(prometheus.Gauge)).Set(1)
+				return 1
 			}
+			return 0
 		},
-	}
+	)
 
 	return e.Metrics
 }
