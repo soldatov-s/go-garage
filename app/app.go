@@ -2,250 +2,323 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/pkg/errors"
-	"github.com/soldatov-s/go-garage/domains"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/log"
-	"github.com/soldatov-s/go-garage/meta"
-	"github.com/soldatov-s/go-garage/providers/base"
-	"github.com/soldatov-s/go-garage/providers/cache"
-	"github.com/soldatov-s/go-garage/providers/db"
-	"github.com/soldatov-s/go-garage/providers/httpsrv"
-	"github.com/soldatov-s/go-garage/providers/opcua"
-	"github.com/soldatov-s/go-garage/providers/stats"
-	"github.com/soldatov-s/go-garage/utils"
+	"github.com/soldatov-s/go-garage/x/httpx"
+	"github.com/soldatov-s/go-garage/x/stringsx"
+	"golang.org/x/sync/errgroup"
 )
 
+const (
+	ReadyEndpoint   = "/health/ready"
+	AliveEndpoint   = "/health/alive"
+	MetricsEndpoint = "/metrics"
+)
+
+var (
+	ErrAppendMetrics            = errors.New("failed to append metrics")
+	ErrAliveHandlers            = errors.New("failed to append alive handlers")
+	ErrReadyHandlers            = errors.New("failed to append ready handlers")
+	ErrNotFindStatsHTTP         = errors.New("not find http server for stats")
+	ErrFailedTypeCastHTTPServer = errors.New("failed typecast to http server")
+)
+
+type HTTPServer interface {
+	RegisterEndpoint(method, endpoint string, handler http.Handler, m ...httpx.MiddleWareFunc) error
+}
+
+type EnityMetricsGateway interface {
+	GetMetrics() *base.MapMetricsOptions
+}
+
+type EnityAliveGateway interface {
+	GetAliveHandlers() *base.MapCheckOptions
+}
+
+type EnityReadyGateway interface {
+	GetReadyHandlers() *base.MapCheckOptions
+}
+
+type EnityGateway interface {
+	Shutdown(ctx context.Context) error
+	Start(ctx context.Context) error
+	GetFullName() string
+}
+
+type ApplicationDeps struct {
+	Meta               *ApplicationMetaDeps
+	StatsHTTPEnityName string
+	Logger             *log.Logger
+	ErrorGroup         *errgroup.Group
+}
+
+type ApplicationMetaDeps struct {
+	Name        string
+	Builded     string
+	Hash        string
+	Version     string
+	Description string
+}
+
+type ApplicationMeta struct {
+	Name        string
+	Builded     string
+	Hash        string
+	Version     string
+	Description string
+}
+
+func NewApplicationMeta(deps *ApplicationMetaDeps) *ApplicationMeta {
+	meta := &ApplicationMeta{
+		Name:        deps.Name,
+		Builded:     deps.Name,
+		Hash:        deps.Hash,
+		Version:     deps.Version,
+		Description: deps.Description,
+	}
+
+	if meta.Description == "" {
+		meta.Description = "no description"
+	}
+
+	if meta.Name == "" {
+		meta.Name = "unknown"
+	}
+
+	if meta.Version == "" {
+		meta.Name = "0.0.0"
+	}
+
+	return meta
+}
+
+func (m *ApplicationMeta) BuildInfo() string {
+	return m.Version + ", builded: " + m.Builded + ", hash: " + m.Hash
+}
+
+type App struct {
+	*base.MetricsStorage
+	*base.ReadyCheckStorage
+	*base.AliveCheckStorage
+	meta               *ApplicationMeta
+	mu                 sync.Mutex
+	enities            map[string]EnityGateway
+	enitiesOrder       []string
+	statsHTTPEnityName string
+	register           prometheus.Registerer
+	logger             *log.Logger
+	signals            []os.Signal
+	errorGroup         *errgroup.Group
+}
+
+type ApplicationOption func(*App)
+
+func WithCustomRegister(register prometheus.Registerer) ApplicationOption {
+	return func(c *App) {
+		c.register = register
+	}
+}
+
+func WithCustomSignalas(signals []os.Signal) ApplicationOption {
+	return func(c *App) {
+		c.signals = signals
+	}
+}
+
+func NewApp(deps *ApplicationDeps, opts ...ApplicationOption) *App {
+	app := &App{
+		MetricsStorage:     base.NewMetricsStorage(),
+		AliveCheckStorage:  base.NewAliveCheckStorage(),
+		ReadyCheckStorage:  base.NewReadyCheckStorage(),
+		meta:               NewApplicationMeta(deps.Meta),
+		enities:            make(map[string]EnityGateway),
+		enitiesOrder:       make([]string, 0, 16),
+		statsHTTPEnityName: deps.StatsHTTPEnityName,
+		register:           prometheus.DefaultRegisterer,
+		logger:             deps.Logger,
+		signals:            defaultOSSignals(),
+		errorGroup:         deps.ErrorGroup,
+	}
+
+	for _, opt := range opts {
+		opt(app)
+	}
+
+	return app
+}
+
+func defaultOSSignals() []os.Signal {
+	return []os.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT}
+}
+
+func (a *App) Meta() *ApplicationMeta {
+	return a.meta
+}
+
+type ErrSignal struct {
+	Signal os.Signal
+}
+
+func (e ErrSignal) Error() string {
+	return fmt.Sprintf("got error signal %s", e.Signal.String())
+}
+
+func (a *App) OSSignalWaiter(ctx context.Context) error {
+	logger := a.logger.Zerolog()
+	closeSignal := make(chan os.Signal, 1)
+	signal.Notify(closeSignal, a.signals...)
+
+	a.errorGroup.Go(func() error {
+		select {
+		case s := <-closeSignal:
+			logger.Info().Msgf("got os signal: %s", s.String())
+			if err := a.Shutdown(ctx); err != nil {
+				return errors.Wrap(err, "shutdown app")
+			}
+			return ErrSignal{Signal: s}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+
+	return nil
+}
+
 // Loop is application loop, exit on SIGTERM
-func Loop(ctx context.Context) error {
-	var closeSignal chan os.Signal
-	m, err := meta.FromContext(ctx)
-	if err != nil {
-		return errors.Wrap(err, "get meta")
-	}
-
-	exit := make(chan struct{})
-	closeSignal = make(chan os.Signal, 1)
-	signal.Notify(closeSignal, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-closeSignal
-		if err := Shutdown(ctx); err != nil {
-			log.FromContext(ctx).GetLogger(m.Name, nil).Fatal().Err(err).Msg("shutdown service")
+func (a *App) Loop(ctx context.Context) error {
+	logger := a.logger.Zerolog()
+	if err := a.errorGroup.Wait(); err != nil {
+		switch {
+		case isExitSignal(err):
+			logger.Info().Msg("exited by exit signal")
+		default:
+			return errors.Wrap(err, "exited with error")
 		}
-		log.FromContext(ctx).GetLogger(m.Name, nil).Info().Msg("exit service")
-		close(exit)
-	}()
-
-	// Exit app if chan is closed
-	<-exit
-
+	}
 	return nil
 }
 
-// getAllMetrics return all metrics from databases and caches
-func getAllMetrics(ctx context.Context) (stats.MapMetricsOptions, error) {
-	metrics := make(stats.MapMetricsOptions)
-	p, err := base.FromContext(ctx)
-	if err != nil {
-		return nil, base.ErrNotFoundCollectors
-	}
-
-	p.Range(func(k, v interface{}) bool {
-		if m, ok := v.(stats.IProvidersMetrics); ok {
-			if _, err = m.GetAllMetrics(metrics); err != nil {
-				return false
-			}
-		}
-
-		return true
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get metrics")
-	}
-
-	return metrics, nil
+func isExitSignal(err error) bool {
+	errSig := ErrSignal{}
+	is := errors.As(err, &errSig)
+	return is
 }
 
-// getAllAliveHandlers return all aliveHandlers from databases and caches
-// nolint : duplicate
-func getAllAliveHandlers(ctx context.Context) (stats.MapCheckFunc, error) {
-	handlers := make(stats.MapCheckFunc)
-	p, err := base.FromContext(ctx)
-	if err != nil {
-		return nil, base.ErrNotFoundCollectors
-	}
-
-	p.Range(func(k, v interface{}) bool {
-		if m, ok := v.(stats.IProvidersMetrics); ok {
-			if _, err = m.GetAllAliveHandlers(handlers); err != nil {
-				return false
-			}
+func (a *App) Start(ctx context.Context) error {
+	for _, k := range a.enitiesOrder {
+		if err := a.enities[k].Start(ctx); err != nil {
+			return errors.Wrapf(err, "start enity %q", k)
 		}
-
-		return true
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get alive handlers")
 	}
 
-	return handlers, nil
-}
-
-// getAllReadyHandlers return all readyHandlers from databases and caches
-// nolint : duplicate
-func getAllReadyHandlers(ctx context.Context) (stats.MapCheckFunc, error) {
-	handlers := make(stats.MapCheckFunc)
-	p, err := base.FromContext(ctx)
-	if err != nil {
-		return nil, base.ErrNotFoundCollectors
-	}
-
-	p.Range(func(k, v interface{}) bool {
-		if m, ok := v.(stats.IProvidersMetrics); ok {
-			if _, err = m.GetAllReadyHandlers(handlers); err != nil {
-				return false
-			}
-		}
-
-		return true
-	})
-
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get ready handlers")
-	}
-
-	return handlers, nil
-}
-
-func StartStatistics(ctx context.Context) error {
-	s, err := stats.FromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	if s == nil {
-		return nil
-	}
-
-	// Collecting all metrics from context
-	metrics, err := getAllMetrics(ctx)
-	if err != nil {
-		return errors.Wrap(err, "failed to get all metrics")
-	}
-
-	// Collecting all aliveHandlers from context
-	aliveHandlers, err := getAllAliveHandlers(ctx)
-	if err != nil {
-		return errors.Wrap(err, "failed to get all alive handlers")
-	}
-
-	// Collecting all readyHandlers from context
-	readyHandlers, err := getAllReadyHandlers(ctx)
-	if err != nil {
-		return errors.Wrap(err, "failed to get all ready handlers")
-	}
-
-	if err := s.Start(ctx, metrics, aliveHandlers, readyHandlers); err != nil {
-		return errors.Wrap(err, "failed to start statistics providers")
+	if err := a.startStatistic(ctx); err != nil {
+		return errors.Wrap(err, "start statistics")
 	}
 
 	return nil
 }
 
-func providersOrder() []string {
-	return []string{db.CollectorName, cache.CollectorName, httpsrv.CollectorName, opcua.CollectorName}
+func (a *App) Shutdown(ctx context.Context) error {
+	reversedProviders := stringsx.ReverseStringSlice(a.enitiesOrder)
+	for _, k := range reversedProviders {
+		if err := a.enities[k].Shutdown(ctx); err != nil {
+			return errors.Wrapf(err, "shutdown enity %q", k)
+		}
+	}
+	return nil
 }
 
-func NewContext(ctx context.Context) (context.Context, error) {
-	ctx, err := base.NewContext(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "create providers context")
-	}
-	ctx, err = domains.NewContext(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "create domain context")
-	}
-	return ctx, nil
-}
-
-// Start all providers and domains
-func Start(ctx context.Context) error {
-	provs, err := base.FromContext(ctx)
-	if err != nil {
-		return base.ErrNotFoundCollectors
+func (a *App) Add(ctx context.Context, e EnityGateway) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, ok := a.enities[e.GetFullName()]; ok {
+		return base.ErrConflict
 	}
 
-	for _, v := range providersOrder() {
-		if p, ok := provs.Load(v); ok {
-			if err := p.(base.EntityGateway).Start(ctx); err != nil {
-				return errors.Wrap(err, "failed to start provider")
-			}
+	a.enities[e.GetFullName()] = e
+	a.enitiesOrder = append(a.enitiesOrder, e.GetFullName())
+
+	if v, ok := e.(EnityMetricsGateway); ok {
+		if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
+			return ErrAppendMetrics
 		}
 	}
 
-	doms, err := domains.FromContext(ctx)
-	if err != nil {
-		return domains.ErrNotFoundDomain
-	}
-
-	doms.Range(func(k, v interface{}) bool {
-		if domain, ok := v.(domains.IBaseDomainStarter); ok {
-			if err = domain.Start(); err != nil {
-				return false
-			}
+	if v, ok := e.(EnityAliveGateway); ok {
+		if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
+			return ErrAliveHandlers
 		}
-		return true
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "failed to start domains")
 	}
 
-	if err := StartStatistics(ctx); err != nil {
-		return errors.Wrap(err, "failed to start statistics")
+	if v, ok := e.(EnityReadyGateway); ok {
+		if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
+			return ErrAliveHandlers
+		}
 	}
 
 	return nil
 }
 
-// Shutdown all domains and providers
-func Shutdown(ctx context.Context) error {
-	var err error
-	doms, err := domains.FromContext(ctx)
-	if err != nil {
-		return domains.ErrNotFoundDomain
+func (a *App) startStatistic(ctx context.Context) error {
+	enity, ok := a.enities[a.statsHTTPEnityName]
+	if !ok {
+		return ErrNotFindStatsHTTP
 	}
 
-	doms.Range(func(k, v interface{}) bool {
-		if domain, ok := v.(domains.IBaseDomainShutdowner); ok {
-			if err = domain.Shutdown(); err != nil {
-				return false
-			}
-		}
-		return true
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "failed to shutdown domains")
+	httpSrv, ok := enity.(HTTPServer)
+	if !ok {
+		return ErrFailedTypeCastHTTPServer
 	}
 
-	provs, err := base.FromContext(ctx)
-	if err != nil {
-		return base.ErrNotFoundCollectors
+	// Registrate metrics
+	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
+		return errors.Wrap(err, "registarte metrics")
 	}
 
-	for _, v := range utils.ReverseStringSlice(providersOrder()) {
-		if p, ok := provs.Load(v); ok {
-			if err := p.(base.EntityGateway).Shutdown(ctx); err != nil {
-				return errors.Wrap(err, "failed to shutdown providers")
-			}
-		}
+	if err := a.logger.GetMetrics().Registrate(a.register); err != nil {
+		return errors.Wrap(err, "registarte metrics")
+	}
+
+	if err := httpSrv.RegisterEndpoint(
+		http.MethodGet,
+		MetricsEndpoint,
+		promhttp.Handler(),
+		func(h http.Handler) http.Handler {
+			return a.PrometheusMiddleware(ctx, h)
+		}); err != nil {
+		return errors.Wrap(err, "registrate prometheus endpoint")
+	}
+
+	// Registrate alive
+	if err := httpSrv.RegisterEndpoint(
+		http.MethodGet,
+		AliveEndpoint,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.AliveCheckHandler(ctx, w)
+		}),
+	); err != nil {
+		return errors.Wrap(err, "registrate alive endpoint")
+	}
+
+	// Registrate ready
+	if err := httpSrv.RegisterEndpoint(
+		http.MethodGet,
+		ReadyEndpoint,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a.ReadyCheckHandler(ctx, w)
+		}),
+	); err != nil {
+		return errors.Wrap(err, "registrate ready endpoint")
 	}
 
 	return nil

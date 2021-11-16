@@ -1,5 +1,14 @@
 {
     "conventionalCommits.scopes": [
-        "email"
+        "app",
+        "base",
+        "crypto",
+        "providers",
+        "log",
+        "swagger",
+        "restclient",
+        "types",
+        "x",
+        "scripts"
     ]
 }

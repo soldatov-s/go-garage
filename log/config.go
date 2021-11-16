@@ -1,5 +1,7 @@
 package log
 
+import "github.com/rs/zerolog"
+
 type Config struct {
 	// HumanFriendly enable writes log in human-friendly format to Out
 	HumanFriendly bool `envconfig:"optional"`
@@ -17,7 +19,6 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Level:           LoggerLevelDisabled,
 		NoColoredOutput: true,
 		HumanFriendly:   false,
 		WithTrace:       false,
@@ -26,6 +27,6 @@ func DefaultConfig() *Config {
 
 func (c *Config) SetDefault() {
 	if c.Level == "" {
-		c.Level = "INFO"
+		c.Level = zerolog.InfoLevel.String()
 	}
 }

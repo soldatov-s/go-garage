@@ -1,197 +1,102 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"reflect"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/pkgerrors"
+	"github.com/soldatov-s/go-garage/base"
 )
 
-const (
-	LoggerLevelDebug    = "DEBUG"
-	LoggerLevelInfo     = "INFO"
-	LoggerLevelWarn     = "WARN"
-	LoggerLevelError    = "ERROR"
-	LoggerLevelFatal    = "FATAL"
-	LoggerLevelPanic    = "PANIC"
-	LoggerLevelTrace    = "TRACE"
-	LoggerLevelDisabled = "DISABLED"
-)
-
-// Logger is a controlling structure for application's logger.
 type Logger struct {
-	// Main logger
-	logger zerolog.Logger
-	// Other created loggers.
-	loggers     sync.Map
-	initialized bool
+	zerolog zerolog.Logger
+	*base.MetricsStorage
 }
 
-// nolint
-func loggerCtxByField(loggerCtx *zerolog.Context, field *Field) zerolog.Context {
-	ctx := *loggerCtx
-	switch field.Value.(type) {
-	case bool:
-		ctx = ctx.Bool(field.Name, field.Value.(bool))
-	case float32:
-		ctx = ctx.Float32(field.Name, field.Value.(float32))
-	case float64:
-		ctx = loggerCtx.Float64(field.Name, field.Value.(float64))
-	case int:
-		ctx = ctx.Int(field.Name, field.Value.(int))
-	case int8:
-		ctx = ctx.Int8(field.Name, field.Value.(int8))
-	case int16:
-		ctx = loggerCtx.Int16(field.Name, field.Value.(int16))
-	case int32:
-		ctx = loggerCtx.Int32(field.Name, field.Value.(int32))
-	case int64:
-		ctx = ctx.Int64(field.Name, field.Value.(int64))
-	case interface{}:
-		ctx = ctx.Interface(field.Name, field.Value)
-	case string:
-		ctx = ctx.Str(field.Name, field.Value.(string))
-	case uint:
-		ctx = ctx.Uint(field.Name, field.Value.(uint))
-	case uint8:
-		ctx = ctx.Uint8(field.Name, field.Value.(uint8))
-	case uint16:
-		ctx = ctx.Uint16(field.Name, field.Value.(uint16))
-	case uint32:
-		ctx = ctx.Uint32(field.Name, field.Value.(uint32))
-	case uint64:
-		ctx = ctx.Uint64(field.Name, field.Value.(uint64))
+func NewLogger(ctx context.Context, config *Config) (*Logger, error) {
+	logger := &Logger{
+		MetricsStorage: base.NewMetricsStorage(),
 	}
-	return ctx
-}
-
-// GetLogger creates new logger if not exists and fills it with defined fields.
-// If requested logger already exists - it'll be returned.
-func (l *Logger) GetLogger(name string, fields ...*Field) *zerolog.Logger {
-	logger, found := l.loggers.Load(name)
-	if found {
-		return logger.(*zerolog.Logger)
+	config.SetDefault()
+	level, err := zerolog.ParseLevel(strings.ToLower(config.Level))
+	if err != nil {
+		return nil, errors.Wrap(err, "parse level")
 	}
 
-	loggerCtx := l.logger.With()
+	zerolog.SetGlobalLevel(level)
 
-	for _, field := range fields {
-		loggerCtx = loggerCtxByField(&loggerCtx, field)
-	}
-
-	log := loggerCtx.Logger()
-	l.loggers.Store(name, &log)
-	return &log
-}
-
-func NewLogger(cfg *Config) *Logger {
-	l := &Logger{}
-
-	cfg.SetDefault()
-	switch strings.ToUpper(cfg.Level) {
-	case LoggerLevelDebug:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case LoggerLevelInfo:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case LoggerLevelWarn:
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case LoggerLevelError:
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case LoggerLevelFatal:
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	case LoggerLevelPanic:
-		zerolog.SetGlobalLevel(zerolog.PanicLevel)
-	case LoggerLevelTrace:
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case LoggerLevelDisabled:
-		zerolog.SetGlobalLevel(zerolog.Disabled)
-	}
-
-	var output io.Writer = os.Stdout
-
-	if cfg.HumanFriendly {
-		output := zerolog.ConsoleWriter{
-			Out:        os.Stdout,
-			NoColor:    cfg.NoColoredOutput,
-			TimeFormat: time.RFC3339,
-		}
-
-		output.FormatLevel = func(i interface{}) string {
-			var v string
-
-			if ii, ok := i.(string); ok {
-				ii = strings.ToUpper(ii)
-				switch ii {
-				case LoggerLevelDebug, LoggerLevelError, LoggerLevelFatal,
-					LoggerLevelInfo, LoggerLevelWarn, LoggerLevelPanic, LoggerLevelTrace:
-					v = fmt.Sprintf("%-5s", ii)
-				default:
-					v = ii
-				}
-			}
-
-			return fmt.Sprintf("| %s |", v)
-		}
-	}
+	output := buildLoggerOutput(config.HumanFriendly, config.NoColoredOutput)
 
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-	l.logger = zerolog.New(output).With().Timestamp().Logger().Hook(TracingHook{WithTrace: cfg.WithTrace})
+	l := zerolog.New(output).With().Timestamp().Logger()
+	l = l.Hook(NewTracingHook(config.WithTrace))
 
-	l.initialized = true
+	logger.zerolog = l
+	if err := logger.buildMetrics(ctx); err != nil {
+		return nil, errors.Wrap(err, "build metrics")
+	}
 
-	return l
+	return logger, nil
 }
 
-// IsInitialized returns true if logger was initialized and configured.
-func (l *Logger) IsInitialized() bool {
-	return l.initialized
+func (l *Logger) Zerolog() *zerolog.Logger {
+	return &l.zerolog
 }
 
-// BuildPackageLogger initilizes fields for domains and packages
-func BuildPackageLogger(parent *zerolog.Logger, emptyStruct interface{}) *zerolog.Logger {
-	log := parent.With().Logger()
-	res := false
-	packageTypes := []string{"domains", "internal"}
-	packageType := ""
-	pkgPath := reflect.TypeOf(emptyStruct).PkgPath()
-	pathElements := strings.Split(pkgPath, "/")
+func buildLoggerOutput(isHumanFriendly, isNoColoredOutput bool) io.Writer {
+	if !isHumanFriendly {
+		return os.Stdout
+	}
 
-	i := 0
-	for _, pathElement := range pathElements {
-		for _, packageType = range packageTypes {
-			if pathElement == packageType {
-				log = log.With().Str("type", pathElements[i]).Logger()
-				log = log.With().Str("package", pathElements[i+1]).Logger()
-				res = true
+	output := zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		NoColor:    isNoColoredOutput,
+		TimeFormat: time.RFC3339,
+	}
 
-				break
+	output.FormatLevel = func(i interface{}) string {
+		var v string
+
+		if ii, ok := i.(string); ok {
+			ii = strings.ToUpper(ii)
+			switch ii {
+			case zerolog.DebugLevel.String(), zerolog.ErrorLevel.String(), zerolog.FatalLevel.String(),
+				zerolog.InfoLevel.String(), zerolog.WarnLevel.String(), zerolog.PanicLevel.String(),
+				zerolog.TraceLevel.String():
+				v = fmt.Sprintf("%-5s", ii)
+			default:
+				v = ii
 			}
 		}
 
-		if res {
-			break
-		}
-		i++
+		return fmt.Sprintf("| %s |", v)
 	}
 
-	if packageType == "domains" {
-		ver, _ := strconv.ParseInt(strings.TrimPrefix(pathElements[i+2], "v"), 10, 64)
-		log = log.With().Int64("version", ver).Logger()
-		i++
+	return output
+}
+
+func (l *Logger) buildMetrics(_ context.Context) error {
+	fullName := "logger"
+
+	helpWarns := "How many warnings occurred."
+	warnsMetric, err := l.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "warns total", helpWarns)
+	if err != nil {
+		return errors.Wrap(err, "add counter metric")
 	}
+	l.zerolog = l.zerolog.Hook(NewMetricWarnHook(warnsMetric))
 
-	if i+3 <= len(pathElements) {
-		log = log.With().Str("subsystem", pathElements[i+2]).Logger()
+	helpErrors := "How many errors occurred."
+	errorsMetric, err := l.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "errors total", helpErrors)
+	if err != nil {
+		return errors.Wrap(err, "add counter metric")
 	}
+	l.zerolog = l.zerolog.Hook(NewMetricErrorHook(errorsMetric))
 
-	log.Info().Msg("initializing loggers...")
-
-	return &log
+	return nil
 }

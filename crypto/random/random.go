@@ -3,6 +3,8 @@ package random
 import (
 	"crypto/rand"
 	"math/big"
+
+	"github.com/pkg/errors"
 )
 
 type RuneSequenceType int
@@ -48,7 +50,7 @@ func (r RuneSequenceType) Random(l int) (seq RuneArray, err error) {
 	for i := 0; i < l; i++ {
 		rnd, err := rand.Int(rander, c)
 		if err != nil {
-			return seq, err
+			return seq, errors.Wrap(err, "random int")
 		}
 		rn := r.Runes()[rnd.Uint64()]
 		seq[i] = rn
@@ -65,7 +67,7 @@ func GenerateSalt(saltSize int) ([]byte, error) {
 	for i := range b {
 		id, err := rand.Int(rand.Reader, big.NewInt(int64(l)))
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "random int")
 		}
 		b[i] = letterBytes[id.Int64()]
 	}

@@ -6,6 +6,8 @@ import (
 	"errors"
 )
 
+var ErrTypeAssertion = errors.New("type assertion to []byte failed")
+
 // NullMeta represents a map[string]interface{} that may be null.
 // NullMeta implements the Scanner interface so
 // it can be used as a scan destination
@@ -54,7 +56,7 @@ func (x *NullMeta) Scan(value interface{}) error {
 	b, ok := value.([]byte)
 
 	if !ok {
-		return errors.New("type assertion to []byte failed")
+		return ErrTypeAssertion
 	}
 
 	x.Valid = true

@@ -1,4 +1,7 @@
 linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: true
   govet:
     check-shadowing: true
     settings:
@@ -8,112 +11,79 @@ linters-settings:
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+  exhaustive:
+    default-signifies-exhaustive: true
   golint:
-    min-confidence: 0
+    min-confidence: 0.8
+  gofmt:
+    simplify: true
   gocyclo:
-    min-complexity: 15
-  maligned:
-    suggest-new: true
+    min-complexity: 11
   dupl:
     threshold: 100
   goconst:
-    min-len: 2
-    min-occurrences: 2
+    min-len: 3
+    min-occurrences: 3
   depguard:
     list-type: blacklist
+    include-go-root: false
     packages:
-      # logging is allowed only by logutils.Log, logrus
-      # is allowed to use only in logutils package
+      - github.com/davecgh/go-spew/spew
       - github.com/sirupsen/logrus
-    packages-with-error-messages:
-      github.com/sirupsen/logrus: "logging is allowed only by logutils.Log"
   misspell:
     locale: US
   lll:
-    line-length: 140
+    line-length: 130
+    tab-width: 2
+  unused:
+    check-exported: false
+  unparam:
+    algo: cha
+    check-exported: false
+  nakedret:
+    max-func-lines: 100
+  prealloc:
+    simple: true
+    range-loops: false
+    for-loops: false
   goimports:
     local-prefixes: github.com/golangci/golangci-lint
   gocritic:
     enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
       - performance
       - style
+      - experimental
     disabled-checks:
       - wrapperFunc
-      - dupImport # https://github.com/go-critic/go-critic/issues/845
-      - ifElseChain
-      - octalLiteral
-  funlen:
-    lines: 100
-    statements: 50
-
 linters:
-  # please, do not use `enable-all`: it's deprecated and will be removed soon.
-  # inverted configuration with `enable-all` and `disable` is not scalable during updates of golangci-lint
-  disable-all: true
-  enable:
-    - bodyclose
-    - deadcode
-    - depguard
-    - dogsled
-    - dupl
-    - errcheck
-    - funlen
-    - goconst
-    - gocritic
-    - gocyclo
-    - gofmt
-    - goimports
+  enable-all: true
+  disable:
+    - errname
     - golint
-    - gosec
-    - gosimple
-    - govet
-    - ineffassign
-    - interfacer
-    - misspell
-    - nakedret
-    - scopelint
-    - staticcheck
-    - structcheck
-    - stylecheck
-    - typecheck
-    - unconvert
-    - unparam
-    - unused
-    - varcheck
-    - whitespace
-    - maligned
-    - prealloc
+    - tagliatelle
+    - wsl
     - gochecknoglobals
-    - gocognit
-    - godox
-    - lll
-    - gochecknoinits
-
-  # don't enable:
-
-run:
-  skip-dirs:
-    - test/testdata_etc
-  skip-files:
-    - internal/cache/.*_test.go
-  timeout: 5m
-  modules-download-mode: vendor
-
+    - gomnd
+    - godot
+    - nlreturn
+    - gci
+    - exhaustivestruct
+    - paralleltest
+    - wrapcheck
+    - cyclop
+    - gomoddirectives
+    - maligned
+    - interfacer
+    - scopelint
 issues:
+  exclude:
+    - Function 'Run' has too many statements
+    - Function 'Run' is too long
+    - cyclomatic complexity [0-9]+ of func `Run` is high
   exclude-rules:
-    - path: internal/(cache|renameio)/
-      linters:
-        - lll
-        - gochecknoinits
-        - gocyclo
+    - linters:
         - funlen
-
-# golangci.com configuration
-# https://github.com/golangci/golangci/wiki/Configuration
-service:
-  golangci-lint-version: 1.31.x # use the fixed version to not introduce new linters unexpectedly
-  prepare:
-    - echo "here I can run custom commands, but no preparation needed for this repo"
+      source: "^func Test"
+  exclude-use-default: true
+  max-per-linter: 0
+  max-same: 0

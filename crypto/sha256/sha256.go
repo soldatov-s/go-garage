@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 
+	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/crypto/random"
 )
 
@@ -13,6 +14,14 @@ const (
 	cryptAlg    = "sha256"
 	cryptAlgLen = len(cryptAlg)
 	defaultCost = 8
+)
+
+var (
+	// ErrMismatchedHashAndPassword the error returned from CompareHashAndPassword when a password and hash do
+	// not match.
+	ErrMismatchedHashAndPassword = errors.New("hashedPassword is not the hash of the given password")
+	// ErrBadAlgorithm the error returned from newFromHash when a hash not include necessary prefix
+	ErrBadAlgorithm = errors.New("bad algorithm")
 )
 
 type hashed struct {
@@ -24,11 +33,11 @@ func bcrypt(password, salt []byte) ([]byte, error) {
 	// Combine salt with password
 	h := sha256.New()
 	if _, err := h.Write(password); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "write password")
 	}
 
 	if _, err := h.Write(salt); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "write salt")
 	}
 
 	return []byte(hex.EncodeToString(h.Sum(nil))), nil
@@ -39,11 +48,11 @@ func newFromPassword(password []byte, saltSize int) (*hashed, error) {
 
 	salt, err := random.GenerateSalt(saltSize)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "generate salt")
 	}
 	p.hash, err = bcrypt(password, salt)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "bcrypt")
 	}
 	p.salt = salt
 
@@ -55,7 +64,7 @@ func newFromPassword(password []byte, saltSize int) (*hashed, error) {
 func GenerateFromPassword(password []byte, saltSize int) ([]byte, error) {
 	p, err := newFromPassword(password, saltSize)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "new hashed from password")
 	}
 	return p.Hash(), nil
 }
@@ -75,12 +84,12 @@ func (p *hashed) Hash() []byte {
 func CompareHashAndPassword(hashedPassword, password []byte, saltSize int) error {
 	p, err := newFromHash(hashedPassword, saltSize)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new hashed from hash+salt")
 	}
 
 	h, err := bcrypt(password, p.salt)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "bcrypt")
 	}
 
 	otherP := &hashed{
@@ -88,11 +97,11 @@ func CompareHashAndPassword(hashedPassword, password []byte, saltSize int) error
 		salt: p.salt,
 	}
 
-	if subtle.ConstantTimeCompare(p.Hash(), otherP.Hash()) == 1 {
-		return nil
+	if subtle.ConstantTimeCompare(p.Hash(), otherP.Hash()) != 1 {
+		return ErrMismatchedHashAndPassword
 	}
 
-	return ErrMismatchedHashAndPassword
+	return nil
 }
 
 func newFromHash(hashedPassword []byte, saltSize int) (*hashed, error) {
@@ -122,7 +131,7 @@ func newFromHash(hashedPassword []byte, saltSize int) (*hashed, error) {
 func HashAndSalt(pwd string) (string, error) {
 	hash, err := GenerateFromPassword([]byte(pwd), defaultCost)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "generate from password")
 	}
 	// GenerateFromPassword returns a byte slice so we need to
 	// convert the bytes to a string and return it
