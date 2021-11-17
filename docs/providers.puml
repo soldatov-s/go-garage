@@ -1,0 +1,11 @@
+@startuml providers
+
+!include echo.puml
+!include mongo.puml
+!include pq.puml
+!include redis.puml
+!include rabbitmq.puml
+!include clickhouse.puml
+!include gopcua.puml
+
+@enduml

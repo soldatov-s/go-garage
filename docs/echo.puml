@@ -1,0 +1,42 @@
+@startuml echo
+
+!include base.puml
+
+class echo.Config {
+    +Address: string
+    +DisableHTTP2: bool
+    +Debug: bool
+    +HideBanner: bool
+    +HidePort: bool
+    +CertFile: string
+    +KeyFile: string
+    +BodyReadTimeout: time.Duration
+    +BodyWriteTimeout: time.Duration
+    +HeaderReadTimeout: time.Duration
+    +Middlewares: []interface{}
+    +SetDefault(): *Config
+    +NewEcho(): *echo.Echo
+}
+
+class echo.Enity {
+    *base.Enity
+	*base.MetricsStorage
+	---
+    -config *Config
+	-server *echo.Echo
+	-prometheusMiddleware func(next echo.HandlerFunc) echo.HandlerFunc
+    ---
+    -buildMetrics(Context) error
+    +GetServer(Context): *echo.Echo
+    +GetConfig(Context): *Config
+    +Start(Context): error
+    +Shutdown(Context): error
+    +RegisterEndpoint(method, endpoint string, handler http.Handler, m ...MiddleWareFunc): error
+    +APIGroup(Context, version, buildInfo string, swaggerGet GetSwagger, middlewares ...echo.MiddlewareFunc) (*echo.Group, error)
+}
+
+echo.Enity *-- echo.Config
+echo.Enity *-- base.Enity
+echo.Enity *-- base.MetricsStorage
+
+@enduml

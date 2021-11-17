@@ -1,0 +1,37 @@
+@startuml dbgraph
+
+!include base.puml
+
+class dbgraph.Config {
+	+DSN string
+	+StartWatcher bool
+	+Timeout time.Duration
+    +SetDefault() *Config
+}
+
+class dbgraph.Enity {
+	*base.Enity
+	*base.MetricsStorage
+	*base.ReadyCheckStorage
+    ---
+	-grpcConn *grpc.ClientConn
+	-conn *dgo.Dgraph
+	-config *Config
+    -startWatcher(Context): error
+    -watcher(Context) bool
+    -shutdown(Context): error
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    +GetConn() *dgo.Dgraph
+    +GetConfig() *Config
+    +Ping(Context): error
+    +Shutdown(Context): error
+    +Start(Context, errorGroup *errgroup.Group) error
+}
+
+dbgraph.Enity *-- dbgraph.Config
+dbgraph.Enity *-- base.Enity
+dbgraph.Enity *-- base.MetricsStorage
+dbgraph.Enity *-- base.ReadyCheckStorage
+
+@enduml

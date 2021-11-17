@@ -1,0 +1,61 @@
+@startuml pq
+
+!include base.puml
+!include migrations.puml
+
+class pq.Config {
+    +DSN: string
+    +MaxConnectionLifetime: time.Duration
+    +MaxIdleConnections: int
+    +MaxOpenedConnections: int
+    +Options: string
+    +QueueWorkerTimeout: time.Duration
+    +StartQueueWorker: bool
+    +StartWatcher: bool
+    +Timeout: time.Duration
+    +Migrate: *migrations.Config
+    +SetDefault() *Config
+    +ComposeDSN() string
+    +GetDBName() string
+}
+
+pq.Config *-- migrations.Config
+
+class pq.Enity {
+    *base.Entity
+    *base.MetricsStorage
+    *base.ReadyCheckStorage
+    ---
+    -conn: *sqlx.DB
+    -config: *Config
+    -queue: *sql.Queue
+    -queueWorkerStopped: bool
+    ---
+    -startWatcher(Context): error
+    -shutdown(Context): error
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    +GetConn() *sqlx.DB
+    +GetConfig(Context): *Config
+    +Ping(Context): error
+    +Shutdown(Context): error
+    +Start(Context, errorGroup *errgroup.Group) error
+    +SetConnPoolLifetime(connMaxLifetime time.Duration)
+    +SetConnPoolLimits(maxIdleConnections, maxOpenedConnections int)
+    +SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration)
+    +GetMetrics(Context): (base.MapMetricsOptions, error)
+    +GetReadyHandlers(Context): (base.MapCheckFunc, error)
+    ---Mutex---
+    +NewMutex(checkInterval time.Duration): (*Mutex, error)
+    +NewMutexByID(lockID int64, checkInterval time.Duration): (*Mutex, error)
+    ---Queue---
+    -startQueueWorker(Context): error
+    +AppendToQueue(queueItem *sql.QueueItem)
+}
+
+pq.Enity *-- pq.Config
+pq.Enity *-- base.Enity
+pq.Enity *-- base.MetricsStorage
+pq.Enity *-- base.ReadyCheckStorage
+
+@enduml

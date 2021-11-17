@@ -1,0 +1,61 @@
+@startuml clickhouse
+
+!include base.puml
+!include migrations.puml
+
+class clickhouse.Config {
+    +DSN: string
+    +MaxConnectionLifetime: time.Duration
+    +MaxIdleConnections: int
+    +MaxOpenedConnections: int
+    +Options: string
+    +QueueWorkerTimeout: time.Duration
+    +StartQueueWorker: bool
+    +StartWatcher: bool
+    +Timeout: time.Duration
+    +Migrate: *migrations.Config
+    +SetDefault() *Config
+    +ComposeDSN() string
+    +GetDBName() string
+}
+
+clickhouse.Config *-- migrations.Config
+
+class clickhouse.Enity {
+    *base.Entity
+    *base.MetricsStorage
+    *base.ReadyCheckStorage
+    ---
+    -conn: *sqlx.DB
+    -config: *Config
+    -queue: *sql.Queue
+    -queueWorkerStopped: bool
+    ---
+    -startWatcher(Context): error
+    -shutdown(Context): error
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    +GetConn() *sqlx.DB
+    +GetConfig(Context): *Config
+    +Ping(Context): error
+    +Shutdown(Context): error
+    +Start(Context, errorGroup *errgroup.Group) error
+    +SetConnPoolLifetime(connMaxLifetime time.Duration)
+    +SetConnPoolLimits(maxIdleConnections, maxOpenedConnections int)
+    +SetPoolLimits(maxIdleConnections, maxOpenedConnections int, connMaxLifetime time.Duration)
+    +GetMetrics(Context): (base.MapMetricsOptions, error)
+    +GetReadyHandlers(Context): (base.MapCheckFunc, error)
+    ---Mutex---
+    +NewMutex(checkInterval time.Duration): (*Mutex, error)
+    +NewMutexByID(lockID int64, checkInterval time.Duration): (*Mutex, error)
+    ---Queue---
+    -startQueueWorker(Context): error
+    +AppendToQueue(queueItem *sql.QueueItem)
+}
+
+clickhouse.Enity *-- clickhouse.Config
+clickhouse.Enity *-- base.Enity
+clickhouse.Enity *-- base.MetricsStorage
+clickhouse.Enity *-- base.ReadyCheckStorage
+
+@enduml 

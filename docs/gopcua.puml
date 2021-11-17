@@ -1,0 +1,57 @@
+@startuml gopcua
+
+!include base.puml
+
+class gopcua.Config {
+	+DSN string 
+	+SecurityPolicy string 
+	+SecurityMode string 
+	+CertificateFile string 
+	+PrivateKeyFile string 
+	+Interval time.Duration 
+	+QueueSize int 
+	+Timeout time.Duration 
+	+Handle uint32 
+	+StartWatcher bool
+    +SetDefault() *Config 
+}
+
+class gopcua.Enity {
+	*base.Enity
+	*base.MetricsStorage
+	*base.ReadyCheckStorage
+    ---
+	-config *Config
+	-conn *opcua.Client
+	-subscription *monitor.Subscription
+	-ch chan *monitor.DataChangeMessage
+    -subscribe(Context, subscriber Subscriber) error
+    -initSubscription(Context) error
+    -startWatcher(Context)
+    -shutdown(Context) error
+    -watcher(Context) bool
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    +GetSubscription() *monitor.Subscription
+    +GetConn() *opcua.Client
+    +GetConfig() *Config
+    +Shutdown(Context) error
+    +Start(Context) error
+    +WaitForEstablishing(Context)
+    +Subscribe(Context, errorGroup *errgroup.Group, subscriber Subscriber) error
+    +SubscribeNodeID(Context, nodeID string) error
+    +Ping(Context) error
+}
+
+interface gopcua.Subscriber {
+	Consume(Context, data *monitor.DataChangeMessage) error
+}
+
+gopcua.Enity --> gopcua.Subscriber
+
+gopcua.Enity *-- gopcua.Config
+gopcua.Enity *-- base.Enity
+gopcua.Enity *-- base.MetricsStorage
+gopcua.Enity *-- base.ReadyCheckStorage
+
+@enduml

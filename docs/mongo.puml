@@ -1,0 +1,52 @@
+@startuml mongo
+
+!include base.puml
+
+class mongo.Config {
+    +DSN: string
+    +Options: string
+    +StartWatcher: bool
+    +Timeout: time.Duration
+    +SetDefault() *Config
+    +GetDBName() string
+    +ComposeDSN() string
+}
+
+class mongo.Enity {
+    *base.Entity
+    *base.MetricsStorage
+    *base.ReadyCheckStorage
+    ---
+    -conn: *mongo.Client
+    -config: *Config
+    -dbName: string
+    -bucket: *gridfs.Bucket
+    ---
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    -startWatcher(Context): error
+    -shutdown(Context): error
+    +GetConn(Context): *mongo.Client
+    +GetConfig(Context): *Config
+    +Ping(Context): error
+    +Shutdown(Context): error
+    +Start(Context, errorGroup *errgroup.Group) error
+    +GetMetrics(Context): (base.MapMetricsOptions, error)
+    +GetReadyHandlers(Context): (base.MapCheckFunc, error)
+    ---Bucket---
+    -newBucket(): (*gridfs.Bucket, error)
+    -writeToGridFile(Context, fileName string, file multipart.File, gridFile *gridfs.UploadStream): (int, error)
+    +WriteMultipart(Context, fileprefix string, multipartForm *multipart.Form): (ObjectIDFileName, error)
+    +GetFile(Context, fileID string): (*bytes.Buffer, int64, error)
+    +GetFileByName(Context, fileName, fileprefix string): (*bytes.Buffer, int64, error)
+    +DeleteFile(fileID string): error
+    +RenameFile(fileID, newFilename string): error
+    +UpdateFile(Context, fileID, fileprefix string, multipartForm *multipart.Form): error
+}
+
+mongo.Enity *-- mongo.Config
+mongo.Enity *-- base.Enity
+mongo.Enity *-- base.MetricsStorage
+mongo.Enity *-- base.ReadyCheckStorage
+
+@enduml

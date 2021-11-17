@@ -1,0 +1,37 @@
+@startuml migrations
+
+class migrations.Config {
+    +Action: string
+    +Count: int64
+    +Directory: string
+    +Only: bool
+    +MigrationsType: Type
+    +Schema: string
+    +SetDefault() *Config
+}
+
+class migrations.Migrator {
+    -db: *sql.DB
+    -config: *Config
+    -migratedMutex: sync.Mutex
+    -migrated: bool
+    -name: string
+    -dialect: string
+    -setMigrationFlag()
+    -waitConn(Context): error
+    -getCurrentDBVersion(Context) int64
+    -migrate(Context, currentDBVersion int64) error
+    -migrateSchema(Context) error
+    +Migrate(Context)
+    +SetSchema(schema string)
+}
+
+migrations.Migrator *-- migrations.Config
+
+class migrations.InCode {
+    +Name: string
+    +Down func(tx *sql.Tx) error
+    +Up func(tx *sql.Tx) error
+}
+
+@enduml

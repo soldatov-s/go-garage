@@ -1,0 +1,92 @@
+@startuml redis
+
+!include base.puml
+
+package rediscache {
+    class rediscache.Config {
+        -KeyPrefix string
+        -ClearTime time.Duration
+    }
+
+    class rediscache.Cache {
+        *base.MetricsStorage
+        ---
+        -config *Config
+        -conn *rejson.Client
+        -name string
+        ---
+        +Get(ctx context.Context, key string, value interface{}): error
+        +JSONGet(ctx context.Context, key, path string, value interface{})
+        +Set(ctx context.Context, key string, value interface{}): error
+        +SetNX(ctx context.Context, key string, value interface{}): error
+        +JSONSet(ctx context.Context, key, path, json string): error
+        +JSONSetNX(ctx context.Context, key, path, json string): error
+        +Delete(ctx context.Context, key string): error
+        +Size(ctx context.Context): (int, error)
+    }
+
+    rediscache.Cache *-- rediscache.Config
+    rediscache.Cache *-- base.MetricsStorage
+}
+
+class redis.Mutex {
+    -conn: *rejson.Client
+    -lockKey: string
+    -lockValue: string
+    -checkInterval: time.Duration
+    -expire: time.Duration
+    -locked: bool
+    -mu: sync.RWMutex
+    -commonLock(Context): (err error)
+    -commonUnlock(Context): (err error)
+    -commonExtend(Context, time.Duration): (err error)
+    +Lock(Context): (err error)
+    +Unlock(Context): (err error)
+    +Extend(Context, time.Duration): (err error)
+}
+
+class redis.Config {
+    +DSN: string
+    +MaxConnectionLifetime: time.Duration
+    +MinIdleConnections: int
+    +MaxOpenedConnections: int
+    +StartWatcher: bool
+    +Timeout: time.Duration
+    +SetDefault(): *Config
+    +GetOptions(): (*redis.Options, error)
+}
+
+class redis.Enity {
+    *base.Enity
+    *base.MetricsStorage
+    *base.ReadyCheckStorage
+    ---
+    -conn *rejson.Client
+    -config *Config
+    -caches map[string]*rediscache.Cache
+    ---
+    -startWatcher(Context)
+    -buildMetrics(Context) error
+    -buildReadyHandlers(Context) error
+    -shutdown(Context) error
+    -watcher(Context) bool
+    +Ping(Context) error
+    +GetConn(): *rejson.Client
+    +GetConfig(): *Config
+    +Shutdown(Context) error
+    +Start(Context) error
+    +SetConnPoolLifetime(connMaxLifetime time.Duration)
+    +SetConnPoolLimits(minIdleConnections, maxOpenedConnections int)
+    +WaitForEstablishing(Context)
+    ---Mutex---
+    +NewMutex(expire, checkInterval time.Duration): (*Mutex, error)
+    +NewMutexByID(lockID string, expire, checkInterval time.Duration): (*Mutex, error)
+}
+
+redis.Enity *-- redis.Config
+redis.Enity *-- rediscache.Cache
+redis.Enity *-- base.Enity
+redis.Enity *-- base.MetricsStorage
+redis.Enity *-- base.ReadyCheckStorage
+
+@enduml

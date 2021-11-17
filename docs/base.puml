@@ -1,0 +1,75 @@
+@startuml base
+
+class base.MetricOptions {
+    +Name string
+    +Metric MetricGateway
+    +Func MetricFunc
+}
+
+class base.MapMetricsOptions {
+    -mu sync.Mutex
+    -options map[string]*MetricOptions
+    +Append(*MapMetricsOptions) error
+    +Add(*MetricOptions) error
+    +AddGauge(fullName, postfix, help string, f GaugeFunc) (prometheus.Gauge, error)
+    +AddHistogramVec(fullName, postfix, help string, args []string) (*prometheus.HistogramVec, error)
+    +AddCounterVec(fullName, postfix, help string, args []string) (*prometheus.CounterVec, error)
+    +AddIncCounter(fullName, postfix, help string) (prometheus.Counter, error)
+    +Registrate(register prometheus.Registerer) error
+}
+
+base.MapMetricsOptions *-- base.MetricOptions
+
+class base.MetricsStorage {
+    -metrics *MapMetricsOptions
+    +GetMetrics() *MapMetricsOptions
+}
+
+base.MetricsStorage *-- base.MapMetricsOptions
+
+class base.CheckOptions {
+    +Name string
+    +CheckFunc func(Context) error
+}
+
+class base.MapCheckOptions {
+    -mu sync.RWMutex
+    -options map[string]*CheckOptions
+    +Append(*MapCheckOptions) error
+    +Add(*CheckOptions) error
+}
+
+base.MapCheckOptions *-- base.CheckOptions
+
+class base.ReadyCheckStorage  {
+	-readyCheck *MapCheckOptions
+    +GetReadyHandlers() *MapCheckOptions
+    +ReadyCheckHandler(Context, http.ResponseWriter)
+}
+
+base.ReadyCheckStorage *-- base.MapCheckOptions
+
+class base.AliveCheckStorage  {
+	-aliveCheck *MapCheckOptions
+    +GetAliveHandlers() *MapCheckOptions
+    +AliveCheckHandler(Context, http.ResponseWriter)
+}
+
+base.AliveCheckStorage *-- base.MapCheckOptions
+
+class base.Enity {
+    -name: string
+    -providerName: string
+    -shuttingDown: bool
+    -watcherStopped: bool
+    ---
+    +GetName(): string
+    +GetFullName(): string
+    +IsShuttingDown(): bool
+    +SetShuttingDown(v bool)
+    +IsWatcherStopped(): bool
+    +SetWatcherStopped(v bool)
+    +GetLogger(ctx context.Context): *zerolog.Logger
+}
+
+@enduml

@@ -1,0 +1,116 @@
+@startuml rabbitmq
+
+!include base.puml
+
+class rabbitmqpub.Config {
+	+ExchangeName string
+	+RoutingKey string
+}
+
+interface rabbitmqpub.Connector {
+	Channel() *amqp.Channel
+}
+
+class rabbitmqpub.Publisher {
+	*base.MetricsStorage
+	---
+    -config *Config
+	-conn Connector
+	-isConnected bool
+	-name string
+	-okMessages func(ctx context.Context) error
+	-badMessages func(ctx context.Context) error
+}
+
+rabbitmqpub.Publisher *-- rabbitmqpub.Config
+rabbitmqpub.Publisher --> rabbitmqpub.Connector
+
+class rabbitmqconsum.Config {
+	+ExchangeName string
+	+RoutingKey string
+	+RabbitQueue  string
+	+RabbitConsume string
+}
+
+interface rabbitmqconsum.Connector {
+	Channel() *amqp.Channel
+}
+
+interface rabbitmqconsum.Subscriber {
+	Consume(Context, data []byte) error
+	Shutdown(Context) error
+}
+
+class rabbitmqconsum.Consumer {
+    *base.MetricsStorage
+    ---
+    -config *Config
+    -conn Connector
+    -name string
+    -connect(Context) (<-chan amqp.Delivery, error)
+    -subscribe(Context, errorGroup *errgroup.Group, subscriber Subscriber) error
+    ---
+    +Subscribe(Context, errorGroup *errgroup.Group, subscriber Subscriber) error
+}
+
+rabbitmqconsum.Consumer *-- rabbitmqconsum.Config
+rabbitmqconsum.Consumer --> rabbitmqconsum.Connector
+rabbitmqconsum.Consumer --> rabbitmqconsum.Subscriber
+
+class rabbitmq.Config {
+	+DSN string
+	+BackoffPolicy
+	+StartWatcher bool
+	+Timeout time.Duration
+    +SetDefault() *Config
+}
+
+class rabbitmq.Enity {
+	*base.Enity
+	*base.MetricsStorage
+	*base.ReadyCheckStorage
+	---
+	-config *Config
+	-conn *Connection
+	-consumers  map[string]*rabbitmqconsum.Consumer
+	-publishers map[string]*rabbitmqpub.Publisher
+	-startWatcher(Context) error
+	-shutdown(Context) error
+	-buildMetrics(Context) error
+	-buildReadyHandlers(Context) error
+	---
+	+GetConn() *Connection
+	+GetConfig() *Config
+	+AddConsumer(Context, config *rabbitmqconsum.Config) (*rabbitmqconsum.Consumer, error)
+	+AddPublisher(Context, config *rabbitmqpub.Config) (*rabbitmqpub.Publisher, error)
+	+Ping(Context) error
+	+Start(Context, errorGroup *errgroup.Group) error
+	+Shutdown(Context) error
+}
+
+rabbitmq.Enity *-- rabbitmq.Config
+rabbitmq.Enity *-- rabbitmqconsum.Consumer
+rabbitmq.Enity *-- rabbitmqpub.Publisher
+rabbitmq.Enity *-- base.Enity
+rabbitmq.Enity *-- base.MetricsStorage
+rabbitmq.Enity *-- base.ReadyCheckStorage
+
+class rabbitmq.Connection {
+	-dsn string
+	-backoffPolicy []time.Duration
+	-conn *amqp.Connection
+	-channel *amqp.Channel
+	-mu sync.Mutex
+	-isClosed bool
+    -connect(Context) error 
+    +Conn() *amqp.Connection
+    +Channel() *amqp.Channel
+    +Close(Context) error
+    +Connect(Context, errorGroup *errgroup.Group) error 
+}
+
+rabbitmq.Enity *-- rabbitmq.Connection
+rabbitmqconsum.Connector <|-- rabbitmq.Connection
+rabbitmqpub.Connector <|-- rabbitmq.Connection 
+
+@enduml

@@ -1,0 +1,74 @@
+@startuml app
+
+!include base.puml
+
+interface app.HTTPServer {
+	+RegisterEndpoint(method, endpoint string, handler http.Handler, m ...httpx.MiddleWareFunc) error
+}
+
+interface app.EnityMetricsGateway {
+	+GetMetrics() *base.MapMetricsOptions
+}
+
+interface app.EnityAliveGateway {
+	+GetAliveHandlers() *base.MapCheckOptions
+}
+
+interface app.EnityReadyGateway {
+	+GetReadyHandlers() *base.MapCheckOptions
+}
+
+interface app.EnityGateway {
+    +Shutdown(ctx context.Context): error
+    +Start(ctx context.Context): error
+    +GetFullName() string
+}
+
+class app.Meta {
+	+Name string
+	+Builded string
+	+Hash string
+	+Version string
+	+Description string
+    +BuildInfo() string
+}
+
+class app.Manager {
+    *base.MetricsStorage
+	*base.ReadyCheckStorage
+	*base.AliveCheckStorage
+    ---
+	-meta *Meta
+	-mu sync.Mutex
+	-enities map[string]EnityGateway
+	-enitiesOrder []string
+	-statsHTTPEnityName string
+	-register prometheus.Registerer
+	-logger *log.Logger
+	-signals []os.Signal
+	-errorGroup *errgroup.Group
+    -startStatistic(Context) error
+    +Add(Context, enity EnityGateway): error
+    +Get(Context, enityName string): (EnityGateway, error)
+    +Shutdown(Context): error
+    +Start(Context): error
+    +Loop(Context): error
+    +OSSignalWaiter(Context) error
+}
+
+app.Manager *-- app.Meta
+app.Manager --> app.EnityMetricsGateway
+app.Manager --> app.EnityAliveGateway
+app.Manager --> app.EnityReadyGateway
+app.Manager --> app.HTTPServer
+app.Manager --> app.EnityGateway
+
+app.Manager *-- base.MetricsStorage
+app.Manager *-- base.ReadyCheckStorage
+app.Manager *-- base.AliveCheckStorage
+
+app.EnityAliveGateway <|-- base.AliveCheckStorage
+app.EnityReadyGateway <|-- base.ReadyCheckStorage
+app.EnityMetricsGateway <|-- base.MetricsStorage
+
+@enduml
