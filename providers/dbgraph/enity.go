@@ -104,20 +104,6 @@ func (e *Enity) Start(ctx context.Context) error {
 	return nil
 }
 
-// WaitForEstablishing will block execution until connection will be
-// successfully established and database migrations will be applied
-// (or rolled back).
-func (e *Enity) WaitForEstablishing(ctx context.Context) {
-	for {
-		if e.conn != nil {
-			break
-		}
-
-		e.GetLogger(ctx).Debug().Msg("enity isn't ready")
-		time.Sleep(time.Millisecond * 100)
-	}
-}
-
 // Connection watcher goroutine entrypoint.
 func (e *Enity) startWatcher(ctx context.Context) {
 	e.GetLogger(ctx).Info().Msg("starting connection watcher")
@@ -228,7 +214,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, err := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); err != nil {
+	if _, err := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); err != nil {
 		return errors.Wrap(err, "add gauge metric")
 	}
 

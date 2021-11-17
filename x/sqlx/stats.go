@@ -25,7 +25,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 
 	metrics := base.NewMapMetricsOptions()
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"open connection",
 		"open connection right now",
 		func(ctx context.Context) (float64, error) {
@@ -35,7 +35,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"max open connection",
 		"max open connection",
 		func(ctx context.Context) (float64, error) {
@@ -45,7 +45,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"in use",
 		"connection in use right now",
 		func(ctx context.Context) (float64, error) {
@@ -55,7 +55,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"wait duration",
 		"wait duration",
 		func(ctx context.Context) (float64, error) {
@@ -65,7 +65,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"max idle closed",
 		"max idle closed",
 		func(ctx context.Context) (float64, error) {
@@ -75,7 +75,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"max life time closed",
 		"max life time closed",
 		func(ctx context.Context) (float64, error) {
@@ -85,7 +85,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		return nil, errors.Wrap(err, "add gauge metric")
 	}
 
-	if _, err := metrics.AddMetricGauge(fullName,
+	if _, err := metrics.AddGauge(fullName,
 		"idle",
 		"idle",
 		func(ctx context.Context) (float64, error) {

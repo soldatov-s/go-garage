@@ -214,7 +214,7 @@ func (c *Cache) buildMetrics(_ context.Context) error {
 		return 0, nil
 	}
 
-	if _, err := c.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "cache size", "cache size", sizeMetricFunc); err != nil {
+	if _, err := c.MetricsStorage.GetMetrics().AddGauge(fullName, "cache size", "cache size", sizeMetricFunc); err != nil {
 		return errors.Wrap(err, "add gauge metric")
 	}
 

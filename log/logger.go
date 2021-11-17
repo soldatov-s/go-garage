@@ -85,14 +85,14 @@ func (l *Logger) buildMetrics(_ context.Context) error {
 	fullName := "logger"
 
 	helpWarns := "How many warnings occurred."
-	warnsMetric, err := l.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "warns total", helpWarns)
+	warnsMetric, err := l.MetricsStorage.GetMetrics().AddIncCounter(fullName, "warns total", helpWarns)
 	if err != nil {
 		return errors.Wrap(err, "add counter metric")
 	}
 	l.zerolog = l.zerolog.Hook(NewMetricWarnHook(warnsMetric))
 
 	helpErrors := "How many errors occurred."
-	errorsMetric, err := l.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "errors total", helpErrors)
+	errorsMetric, err := l.MetricsStorage.GetMetrics().AddIncCounter(fullName, "errors total", helpErrors)
 	if err != nil {
 		return errors.Wrap(err, "add counter metric")
 	}

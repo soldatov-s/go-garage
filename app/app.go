@@ -55,14 +55,14 @@ type EnityGateway interface {
 	GetFullName() string
 }
 
-type ApplicationDeps struct {
-	Meta               *ApplicationMetaDeps
+type ManagerDeps struct {
+	Meta               *MetaDeps
 	StatsHTTPEnityName string
 	Logger             *log.Logger
 	ErrorGroup         *errgroup.Group
 }
 
-type ApplicationMetaDeps struct {
+type MetaDeps struct {
 	Name        string
 	Builded     string
 	Hash        string
@@ -70,7 +70,7 @@ type ApplicationMetaDeps struct {
 	Description string
 }
 
-type ApplicationMeta struct {
+type Meta struct {
 	Name        string
 	Builded     string
 	Hash        string
@@ -78,8 +78,8 @@ type ApplicationMeta struct {
 	Description string
 }
 
-func NewApplicationMeta(deps *ApplicationMetaDeps) *ApplicationMeta {
-	meta := &ApplicationMeta{
+func NewMeta(deps *MetaDeps) *Meta {
+	meta := &Meta{
 		Name:        deps.Name,
 		Builded:     deps.Name,
 		Hash:        deps.Hash,
@@ -102,15 +102,15 @@ func NewApplicationMeta(deps *ApplicationMetaDeps) *ApplicationMeta {
 	return meta
 }
 
-func (m *ApplicationMeta) BuildInfo() string {
+func (m *Meta) BuildInfo() string {
 	return m.Version + ", builded: " + m.Builded + ", hash: " + m.Hash
 }
 
-type App struct {
+type Manager struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	*base.AliveCheckStorage
-	meta               *ApplicationMeta
+	meta               *Meta
 	mu                 sync.Mutex
 	enities            map[string]EnityGateway
 	enitiesOrder       []string
@@ -121,26 +121,26 @@ type App struct {
 	errorGroup         *errgroup.Group
 }
 
-type ApplicationOption func(*App)
+type ManagerOption func(*Manager)
 
-func WithCustomRegister(register prometheus.Registerer) ApplicationOption {
-	return func(c *App) {
+func WithCustomRegister(register prometheus.Registerer) ManagerOption {
+	return func(c *Manager) {
 		c.register = register
 	}
 }
 
-func WithCustomSignalas(signals []os.Signal) ApplicationOption {
-	return func(c *App) {
+func WithCustomSignalas(signals []os.Signal) ManagerOption {
+	return func(c *Manager) {
 		c.signals = signals
 	}
 }
 
-func NewApp(deps *ApplicationDeps, opts ...ApplicationOption) *App {
-	app := &App{
+func NewApp(deps *ManagerDeps, opts ...ManagerOption) *Manager {
+	app := &Manager{
 		MetricsStorage:     base.NewMetricsStorage(),
 		AliveCheckStorage:  base.NewAliveCheckStorage(),
 		ReadyCheckStorage:  base.NewReadyCheckStorage(),
-		meta:               NewApplicationMeta(deps.Meta),
+		meta:               NewMeta(deps.Meta),
 		enities:            make(map[string]EnityGateway),
 		enitiesOrder:       make([]string, 0, 16),
 		statsHTTPEnityName: deps.StatsHTTPEnityName,
@@ -161,7 +161,7 @@ func defaultOSSignals() []os.Signal {
 	return []os.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT}
 }
 
-func (a *App) Meta() *ApplicationMeta {
+func (a *Manager) Meta() *Meta {
 	return a.meta
 }
 
@@ -173,7 +173,7 @@ func (e ErrSignal) Error() string {
 	return fmt.Sprintf("got error signal %s", e.Signal.String())
 }
 
-func (a *App) OSSignalWaiter(ctx context.Context) error {
+func (a *Manager) OSSignalWaiter(ctx context.Context) error {
 	logger := a.logger.Zerolog()
 	closeSignal := make(chan os.Signal, 1)
 	signal.Notify(closeSignal, a.signals...)
@@ -194,8 +194,8 @@ func (a *App) OSSignalWaiter(ctx context.Context) error {
 	return nil
 }
 
-// Loop is application loop, exit on SIGTERM
-func (a *App) Loop(ctx context.Context) error {
+// Loop is application loop
+func (a *Manager) Loop(ctx context.Context) error {
 	logger := a.logger.Zerolog()
 	if err := a.errorGroup.Wait(); err != nil {
 		switch {
@@ -214,7 +214,7 @@ func isExitSignal(err error) bool {
 	return is
 }
 
-func (a *App) Start(ctx context.Context) error {
+func (a *Manager) Start(ctx context.Context) error {
 	for _, k := range a.enitiesOrder {
 		if err := a.enities[k].Start(ctx); err != nil {
 			return errors.Wrapf(err, "start enity %q", k)
@@ -228,7 +228,7 @@ func (a *App) Start(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) Shutdown(ctx context.Context) error {
+func (a *Manager) Shutdown(ctx context.Context) error {
 	reversedProviders := stringsx.ReverseStringSlice(a.enitiesOrder)
 	for _, k := range reversedProviders {
 		if err := a.enities[k].Shutdown(ctx); err != nil {
@@ -238,11 +238,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) Add(ctx context.Context, e EnityGateway) error {
+func (a *Manager) Add(ctx context.Context, e EnityGateway) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, ok := a.enities[e.GetFullName()]; ok {
-		return base.ErrConflict
+		return base.ErrConflictName
 	}
 
 	a.enities[e.GetFullName()] = e
@@ -269,7 +269,7 @@ func (a *App) Add(ctx context.Context, e EnityGateway) error {
 	return nil
 }
 
-func (a *App) startStatistic(ctx context.Context) error {
+func (a *Manager) startStatistic(ctx context.Context) error {
 	enity, ok := a.enities[a.statsHTTPEnityName]
 	if !ok {
 		return ErrNotFindStatsHTTP

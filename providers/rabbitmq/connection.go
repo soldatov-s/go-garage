@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/streadway/amqp"
+	"golang.org/x/sync/errgroup"
 )
 
 type Connection struct {
@@ -64,33 +65,38 @@ func (c *Connection) connect(_ context.Context) error {
 }
 
 // Connection watcher goroutine entrypoint.
-func (c *Connection) Connect(ctx context.Context) error {
-	logger := zerolog.Ctx(ctx)
-	logger.Info().Msg("starting connection watcher")
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Info().Msg("connection watcher stopped")
-			return ctx.Err()
-		default:
-			reason, ok := <-c.channel.NotifyClose(make(chan *amqp.Error))
-			if !ok {
-				if c.isClosed {
-					return nil
-				}
-				logger.Err(reason).Msg("rabbitMQ channel unexpected closed")
+func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
+	errorGroup.Go(func() error {
+		logger := zerolog.Ctx(ctx)
+		logger.Info().Msg("starting connection watcher")
 
-				c.mu.Lock()
-				for _, timeout := range c.backoffPolicy {
-					if connErr := c.connect(ctx); connErr != nil {
-						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-						time.Sleep(timeout)
-						continue
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Info().Msg("connection watcher stopped")
+				return ctx.Err()
+			default:
+				reason, ok := <-c.channel.NotifyClose(make(chan *amqp.Error))
+				if !ok {
+					if c.isClosed {
+						return nil
 					}
-					break
+					logger.Err(reason).Msg("rabbitMQ channel unexpected closed")
+
+					c.mu.Lock()
+					for _, timeout := range c.backoffPolicy {
+						if connErr := c.connect(ctx); connErr != nil {
+							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+							time.Sleep(timeout)
+							continue
+						}
+						break
+					}
+					c.mu.Unlock()
 				}
-				c.mu.Unlock()
 			}
 		}
-	}
+	})
+
+	return nil
 }

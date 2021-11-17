@@ -302,7 +302,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, errMetrics := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); errMetrics != nil {
+	if _, errMetrics := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); errMetrics != nil {
 		return errors.Wrap(errMetrics, "add gauge metric")
 	}
 

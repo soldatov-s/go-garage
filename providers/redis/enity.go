@@ -45,6 +45,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		ReadyCheckStorage: base.NewReadyCheckStorage(),
 		Enity:             baseEnity,
 		config:            config.SetDefault(),
+		caches:            make(map[string]*rediscache.Cache),
 	}
 	if err := enity.buildMetrics(ctx); err != nil {
 		return nil, errors.Wrap(err, "build metrics")
@@ -149,19 +150,6 @@ func (e *Enity) Start(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// WaitForEstablishing will block execution until connection will be
-// successfully established.
-func (e *Enity) WaitForEstablishing(ctx context.Context) {
-	for {
-		if e.conn != nil {
-			break
-		}
-
-		e.GetLogger(ctx).Debug().Msg("enity isn't ready")
-		time.Sleep(time.Millisecond * 100)
-	}
 }
 
 // Connection watcher goroutine entrypoint.
@@ -287,7 +275,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, err := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); err != nil {
+	if _, err := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); err != nil {
 		return errors.Wrap(err, "add gauge metric")
 	}
 

@@ -268,7 +268,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, errMetric := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); errMetric != nil {
+	if _, errMetric := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); errMetric != nil {
 		return errors.Wrap(errMetric, "add gauge metric")
 	}
 

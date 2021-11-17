@@ -1,4 +1,4 @@
-package gopcua
+package opcuax
 
 import "github.com/gopcua/opcua/ua"
 

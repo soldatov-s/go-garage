@@ -46,6 +46,8 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		ReadyCheckStorage: base.NewReadyCheckStorage(),
 		Enity:             baseEnity,
 		config:            config.SetDefault(),
+		consumers:         make(map[string]*rabbitmqconsum.Consumer),
+		publishers:        make(map[string]*rabbitmqpub.Publisher),
 	}
 	if err := enity.buildMetrics(ctx); err != nil {
 		return nil, errors.Wrap(err, "build metrics")
@@ -131,7 +133,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 			return errors.Wrap(err, "create connection")
 		}
 
-		if err := e.conn.Connect(ctx); err != nil {
+		if err := e.conn.Connect(ctx, errorGroup); err != nil {
 			return errors.Wrap(err, "connect")
 		}
 	}
@@ -216,7 +218,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, err := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); err != nil {
+	if _, err := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); err != nil {
 		return errors.Wrap(err, "add gauge metric")
 	}
 

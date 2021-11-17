@@ -11,13 +11,9 @@ import (
 )
 
 var (
-	ErrEmptyOptionsName         = errors.New("empty options name")
-	ErrFuncIsNil                = errors.New("pointer to function is nil")
-	ErrOptionsIsNil             = errors.New("pointer to options is nil")
 	ErrEmptyMetricName          = errors.New("empty metric name")
 	ErrInvalidMetricOptions     = errors.New("passed metric options is not valid")
 	ErrIsNotPrometheusCollector = errors.New("it is not a prometheus collector")
-	ErrConflict                 = errors.New("conflict name")
 	ErrFailedTypecastMetric     = errors.New("failed typecast metric")
 	ErrInvalidCollector         = errors.New("invalid collector")
 )
@@ -143,7 +139,7 @@ func (mmo *MapMetricsOptions) Append(src *MapMetricsOptions) error {
 
 	for k, m := range src.options {
 		if _, ok := mmo.options[k]; ok {
-			return errors.Wrapf(ErrConflict, "name: %s", k)
+			return errors.Wrapf(ErrConflictName, "name: %s", k)
 		}
 
 		mmo.options[k] = m
@@ -169,7 +165,7 @@ func (mmo *MapMetricsOptions) Add(options *MetricOptions) error {
 	}
 
 	if _, ok := mmo.options[options.Name]; ok {
-		return errors.Wrapf(ErrConflict, "name: %s", options.Name)
+		return errors.Wrapf(ErrConflictName, "name: %s", options.Name)
 	}
 
 	mmo.options[options.Name] = options
@@ -177,7 +173,7 @@ func (mmo *MapMetricsOptions) Add(options *MetricOptions) error {
 	return nil
 }
 
-func (mmo *MapMetricsOptions) AddMetricGauge(fullName, postfix, help string, f GaugeFunc) (prometheus.Gauge, error) {
+func (mmo *MapMetricsOptions) AddGauge(fullName, postfix, help string, f GaugeFunc) (prometheus.Gauge, error) {
 	metricOpts := NewMetricOptionsGauge(fullName, postfix, help, f)
 	if err := mmo.Add(metricOpts); err != nil {
 		return nil, errors.Wrap(err, "add to metrics map")
@@ -219,7 +215,7 @@ func (mmo *MapMetricsOptions) AddCounterVec(fullName, postfix, help string, args
 	return counter, nil
 }
 
-func (mmo *MapMetricsOptions) AddMetricIncCounter(fullName, postfix, help string) (prometheus.Counter, error) {
+func (mmo *MapMetricsOptions) AddIncCounter(fullName, postfix, help string) (prometheus.Counter, error) {
 	metricOpts := NewIncCounter(fullName, postfix, help)
 	if err := mmo.Add(metricOpts); err != nil {
 		return nil, errors.Wrap(err, "add to metrics map")
@@ -243,68 +239,6 @@ func (mmo *MapMetricsOptions) Registrate(register prometheus.Registerer) error {
 			return errors.Wrap(err, "registrate metric")
 		}
 	}
-
-	return nil
-}
-
-type CheckOptions struct {
-	// Check name
-	Name string
-	// Checking function should accept no parameters and return
-	// boolean value which will be interpreted as dependency service readiness
-	// and a string which should provide error text if dependency service
-	// isn't ready and something else if dependency service is ready (for
-	// example, dependency service's version).
-	CheckFunc func(ctx context.Context) error
-}
-
-type MapCheckOptions struct {
-	mu      sync.RWMutex
-	options map[string]*CheckOptions
-}
-
-func NewMapCheckOptions() *MapCheckOptions {
-	return &MapCheckOptions{
-		options: make(map[string]*CheckOptions),
-	}
-}
-
-func (mcf *MapCheckOptions) Append(src *MapCheckOptions) error {
-	mcf.mu.Lock()
-	defer mcf.mu.Unlock()
-
-	for k, m := range src.options {
-		if _, ok := mcf.options[k]; ok {
-			return errors.Wrapf(ErrConflict, "name: %s", k)
-		}
-
-		mcf.options[k] = m
-	}
-
-	return nil
-}
-
-func (mcf *MapCheckOptions) Add(options *CheckOptions) error {
-	mcf.mu.Lock()
-	defer mcf.mu.Unlock()
-
-	if options == nil {
-		return ErrOptionsIsNil
-	}
-
-	if options.Name == "" {
-		return ErrEmptyOptionsName
-	}
-
-	if options.CheckFunc == nil {
-		return ErrFuncIsNil
-	}
-
-	if _, ok := mcf.options[options.Name]; ok {
-		return errors.Wrapf(ErrConflict, "name: %s", options.Name)
-	}
-
-	mcf.options[options.Name] = options
 
 	return nil
 }

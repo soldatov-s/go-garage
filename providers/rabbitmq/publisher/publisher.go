@@ -98,7 +98,7 @@ func (p *Publisher) buildMetrics(_ context.Context) error {
 	fullName := stringsx.JoinStrings("_", p.name, p.config.ExchangeName, p.config.RoutingKey)
 
 	helpOKMessages := "ok send messages to exchange"
-	okMessages, err := p.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "ok send messages", helpOKMessages)
+	okMessages, err := p.MetricsStorage.GetMetrics().AddIncCounter(fullName, "ok send messages", helpOKMessages)
 	if err != nil {
 		return errors.Wrap(err, "add inc metric")
 	}
@@ -109,7 +109,7 @@ func (p *Publisher) buildMetrics(_ context.Context) error {
 	}
 
 	helpBadMessages := "bad send messages to exchange"
-	badMessages, err := p.MetricsStorage.GetMetrics().AddMetricIncCounter(fullName, "bad send messages", helpBadMessages)
+	badMessages, err := p.MetricsStorage.GetMetrics().AddIncCounter(fullName, "bad send messages", helpBadMessages)
 	if err != nil {
 		return errors.Wrap(err, "add inc metric")
 	}

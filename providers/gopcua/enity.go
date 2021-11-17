@@ -124,20 +124,25 @@ func (e *Enity) WaitForEstablishing(ctx context.Context) {
 	}
 }
 
+// SubscribeOptions describes interface for subscriber
+type Subscriber interface {
+	Consume(ctx context.Context, data *monitor.DataChangeMessage) error
+}
+
 // Subscribe to channel for receiving message
-func (e *Enity) Subscribe(ctx context.Context, errorGroup *errgroup.Group, options *SubscribeOptions) error {
+func (e *Enity) Subscribe(ctx context.Context, errorGroup *errgroup.Group, subscriber Subscriber) error {
 	if err := e.initSubscription(ctx); err != nil {
 		return err
 	}
 
 	errorGroup.Go(func() error {
-		return e.subscribe(ctx, options)
+		return e.subscribe(ctx, subscriber)
 	})
 
 	return nil
 }
 
-func (e *Enity) subscribe(ctx context.Context, options *SubscribeOptions) error {
+func (e *Enity) subscribe(ctx context.Context, subscriber Subscriber) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -148,11 +153,8 @@ func (e *Enity) subscribe(ctx context.Context, options *SubscribeOptions) error 
 				e.GetLogger(ctx).Error().Err(res.Error).Msgf("failed to get notification")
 				continue
 			}
-			if options != nil {
-				if err1 := options.ConsumeHndl(res); err1 != nil {
-					e.GetLogger(ctx).Error().Msgf("can't consume. error: %s", err1)
-					continue
-				}
+			if err1 := subscriber.Consume(ctx, res); err1 != nil {
+				e.GetLogger(ctx).Error().Msgf("can't consume. error: %s", err1)
 			}
 		default:
 			time.Sleep(e.config.Interval)
@@ -313,7 +315,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 		}
 		return 0, nil
 	}
-	if _, err := e.MetricsStorage.GetMetrics().AddMetricGauge(fullName, "status", help, metricFunc); err != nil {
+	if _, err := e.MetricsStorage.GetMetrics().AddGauge(fullName, "status", help, metricFunc); err != nil {
 		return errors.Wrap(err, "add gauge metric")
 	}
 
