@@ -1,5 +1,5 @@
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/soldatov-s/go-garage?status.svg)](https://pkg.go.dev/github.com/soldatov-s/go-garage)
-[![Coverage Status](http://codecov.io/github/soldatov-s/go-garage/coverage.svg?branch=master)](http://codecov.io/github/soldatov-s/go-gpss?branch=master)
+[![Coverage Status](http://codecov.io/github/soldatov-s/go-garage/coverage.svg?branch=master)](http://codecov.io/github/soldatov-s/go-garage?branch=master)
 [![codebeat badge](https://codebeat.co/badges/d737dbca-7067-4d62-84a3-8f0df0b8958a)](https://codebeat.co/projects/github-com-soldatov-s-go-garage-main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/soldatov-s/go-garage)](https://goreportcard.com/report/github.com/soldatov-s/go-garage)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
