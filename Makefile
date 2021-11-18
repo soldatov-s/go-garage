@@ -1,6 +1,10 @@
 # Recipes
 all: help
 
+.PHONY: init 
+init: ## Init stable version
+	GO111MODULE=on go mod vendor
+
 .PHONY: test
 test: ## Run tests
 	@CGO_ENABLED=0 go test -mod vendor -test.v -cover ./...
@@ -16,4 +20,4 @@ help: ## Display this help screen
 	{printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 		
 
-.PHONY: all test lint
+.PHONY: all test lint init
