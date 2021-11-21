@@ -38,7 +38,7 @@ func NewCache(ctx context.Context, name string, config *Config, conn *rejson.Cli
 }
 
 func (c *Cache) buildKey(key string) string {
-	return c.config.KeyPrefix + "_" + key
+	return c.config.KeyPrefix + ":" + key
 }
 
 // Get item from cache by key.
