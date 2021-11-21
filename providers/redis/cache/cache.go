@@ -37,9 +37,13 @@ func NewCache(ctx context.Context, name string, config *Config, conn *rejson.Cli
 	return cache, nil
 }
 
+func (c *Cache) buildKey(key string) string {
+	return c.config.KeyPrefix + "_" + key
+}
+
 // Get item from cache by key.
 func (c *Cache) Get(ctx context.Context, key string, value interface{}) error {
-	cmdString := c.conn.Get(ctx, c.config.KeyPrefix+key)
+	cmdString := c.conn.Get(ctx, c.buildKey(key))
 	if _, err := cmdString.Result(); err != nil {
 		return ErrNotFoundInCache
 	}
@@ -53,7 +57,7 @@ func (c *Cache) Get(ctx context.Context, key string, value interface{}) error {
 
 // JSONGet item from cache by key.
 func (c *Cache) JSONGet(ctx context.Context, key, path string, value interface{}) error {
-	cmdString, err := c.conn.JSONGet(ctx, c.config.KeyPrefix+key, path)
+	cmdString, err := c.conn.JSONGet(ctx, c.buildKey(key), path)
 	if err != nil {
 		return errors.Wrap(err, "JSONGet")
 	}
@@ -76,7 +80,7 @@ func (c *Cache) JSONGet(ctx context.Context, key, path string, value interface{}
 
 // Set item in cache by key.
 func (c *Cache) Set(ctx context.Context, key string, value interface{}) error {
-	if _, err := c.conn.Set(ctx, c.config.KeyPrefix+key, value, c.config.ClearTime).Result(); err != nil {
+	if _, err := c.conn.Set(ctx, c.buildKey(key), value, c.config.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "set key")
 	}
 
@@ -85,7 +89,7 @@ func (c *Cache) Set(ctx context.Context, key string, value interface{}) error {
 
 // SetNX (Not eXist) item in cache by key.
 func (c *Cache) SetNX(ctx context.Context, key string, value interface{}) error {
-	if _, err := c.conn.SetNX(ctx, c.config.KeyPrefix+key, value, c.config.ClearTime).Result(); err != nil {
+	if _, err := c.conn.SetNX(ctx, c.buildKey(key), value, c.config.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "setNX key")
 	}
 
@@ -94,7 +98,7 @@ func (c *Cache) SetNX(ctx context.Context, key string, value interface{}) error 
 
 // JSONSet item in cache by key.
 func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
-	cmd, err := c.conn.JSONSet(ctx, c.config.KeyPrefix+key, path, json)
+	cmd, err := c.conn.JSONSet(ctx, c.buildKey(key), path, json)
 	if err != nil {
 		return errors.Wrap(err, "JSONSet key")
 	}
@@ -104,7 +108,7 @@ func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
 	}
 
 	if c.config.ClearTime > 0 {
-		_, err := c.conn.Expire(ctx, c.config.KeyPrefix+key, c.config.ClearTime).Result()
+		_, err := c.conn.Expire(ctx, c.buildKey(key), c.config.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -115,7 +119,7 @@ func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
 
 // JSONSetNX item in cache by key.
 func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
-	cmd, err := c.conn.JSONSet(ctx, c.config.KeyPrefix+key, path, json, "NX")
+	cmd, err := c.conn.JSONSet(ctx, c.buildKey(key), path, json, "NX")
 	if err != nil {
 		return errors.Wrap(err, "JSONSetNX key")
 	}
@@ -125,7 +129,7 @@ func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
 	}
 
 	if c.config.ClearTime > 0 {
-		_, err := c.conn.Expire(ctx, c.config.KeyPrefix+key, c.config.ClearTime).Result()
+		_, err := c.conn.Expire(ctx, c.buildKey(key), c.config.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -136,7 +140,7 @@ func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
 
 // Delete item from cache by key.
 func (c *Cache) Delete(ctx context.Context, key string) error {
-	if _, err := c.conn.Del(ctx, c.config.KeyPrefix+key).Result(); err != nil {
+	if _, err := c.conn.Del(ctx, c.buildKey(key)).Result(); err != nil {
 		return errors.Wrap(err, "del key")
 	}
 
