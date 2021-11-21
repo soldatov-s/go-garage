@@ -42,6 +42,8 @@ type Config struct {
 	// aliveness and, if it dies, attempt to reestablish connection
 	// will be made. Default timeout is 10 seconds.
 	Timeout time.Duration `envconfig:"optional"`
+	// Global cache key prefix
+	GlobalCacheKeyPrefix string `envconfig:"optional"`
 }
 
 // SetDefault checks connection options. If required field is empty - it will

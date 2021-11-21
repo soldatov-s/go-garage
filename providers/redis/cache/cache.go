@@ -37,8 +37,16 @@ func NewCache(ctx context.Context, name string, config *Config, conn *rejson.Cli
 	return cache, nil
 }
 
+func (c *Cache) keyPrefix() string {
+	prefix := c.config.KeyPrefix
+	if c.config.GlobalKeyPrefix != "" {
+		prefix = c.config.GlobalKeyPrefix + ":" + prefix
+	}
+	return prefix
+}
+
 func (c *Cache) buildKey(key string) string {
-	return c.config.KeyPrefix + ":" + key
+	return c.keyPrefix() + ":" + key
 }
 
 // Get item from cache by key.
@@ -153,7 +161,7 @@ func (c *Cache) Clear(ctx context.Context) error {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = c.conn.Scan(ctx, cursor, c.config.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = c.conn.Scan(ctx, cursor, c.keyPrefix()+"*", 10).Result()
 		if err != nil {
 			return err
 		}
@@ -187,7 +195,7 @@ func (c *Cache) Size(ctx context.Context) (int, error) {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = c.conn.Scan(ctx, cursor, c.config.KeyPrefix+"*", 10).Result()
+		keys, cursor, err = c.conn.Scan(ctx, cursor, c.keyPrefix()+"*", 10).Result()
 		if err != nil {
 			return -1, errors.Wrap(err, "scan keys")
 		}

@@ -1,6 +1,8 @@
 package rediscache
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	defaulKeyPrefix = "garage_"
@@ -10,7 +12,8 @@ type Config struct {
 	// KeyPrefix is a prefix for eache key in redis
 	KeyPrefix string `envconfig:"optional"`
 	// ClearTime is a time of live item
-	ClearTime time.Duration `envconfig:"optional"`
+	ClearTime       time.Duration `envconfig:"optional"`
+	GlobalKeyPrefix string
 }
 
 // SetDefault checks connection options. If required field is empty - it will

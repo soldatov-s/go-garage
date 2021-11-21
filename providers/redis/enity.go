@@ -68,6 +68,7 @@ func (e *Enity) GetConfig() *Config {
 
 func (e *Enity) AddCache(ctx context.Context, config *rediscache.Config) (*rediscache.Cache, error) {
 	name := config.KeyPrefix
+	config.GlobalKeyPrefix = e.config.GlobalCacheKeyPrefix
 	if _, ok := e.caches[name]; ok {
 		return nil, base.ErrConflictName
 	}
