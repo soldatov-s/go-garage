@@ -135,7 +135,7 @@ func WithCustomSignalas(signals []os.Signal) ManagerOption {
 	}
 }
 
-func NewApp(deps *ManagerDeps, opts ...ManagerOption) *Manager {
+func NewManager(deps *ManagerDeps, opts ...ManagerOption) *Manager {
 	app := &Manager{
 		MetricsStorage:     base.NewMetricsStorage(),
 		AliveCheckStorage:  base.NewAliveCheckStorage(),
