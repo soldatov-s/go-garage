@@ -7,11 +7,11 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
-	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
 	rediscache "github.com/soldatov-s/go-garage/providers/redis/cache"
 	"github.com/soldatov-s/go-garage/providers/redis/rejson"
 	"github.com/soldatov-s/go-garage/x/stringsx"
+	"golang.org/x/sync/errgroup"
 )
 
 const ProviderName = "redis"
@@ -136,40 +136,63 @@ func (e *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, conn
 }
 
 // Start starts connection workers and connection procedure itself.
-func (e *Enity) Start(ctx context.Context) error {
+func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
+	logger := e.GetLogger(ctx)
+	ctx = logger.WithContext(ctx)
+	// If connection is nil - try to establish
+	// connection.
+	if e.conn == nil {
+		e.GetLogger(ctx).Info().Msg("establishing connection ...")
+
+		// Connect to database.
+		connOptions, err := e.config.Options()
+		if err != nil {
+			e.GetLogger(ctx).Fatal().Err(err).Msgf("failed parse options: %s", err)
+		}
+
+		// Set connection pooling options.
+		connOptions.MaxConnAge = e.config.MaxConnectionLifetime
+		connOptions.MinIdleConns = e.config.MinIdleConnections
+		connOptions.PoolSize = e.config.MaxOpenedConnections
+
+		conn := redis.NewClient(connOptions)
+		if _, errPing := conn.Ping(ctx).Result(); errPing != nil {
+			return errors.Wrap(errPing, "connect to enity")
+		}
+
+		e.conn = rejson.ExtendClient(conn)
+		e.GetLogger(ctx).Info().Msg("connection established")
+	}
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.IsWatcherStopped() {
-		if e.config.StartWatcher {
-			e.SetWatcher(false)
-			go e.startWatcher(ctx)
-		} else {
-			// Manually start the connection once to establish connection
-			_ = e.watcher(ctx)
-		}
+		e.SetWatcher(false)
+		errorGroup.Go(func() error {
+			return e.startWatcher(ctx)
+		})
 	}
 
 	return nil
 }
 
 // Connection watcher goroutine entrypoint.
-func (e *Enity) startWatcher(ctx context.Context) {
-	e.GetLogger(ctx).Info().Msg("starting watcher...")
-	ticker := time.NewTicker(e.config.Timeout)
+func (e *Enity) startWatcher(ctx context.Context) error {
+	e.GetLogger(ctx).Info().Msg("starting connection watcher")
 
-	// First start - manually.
-	_ = e.watcher(ctx)
-
-	// Then - every ticker tick.
-	for range ticker.C {
-		if e.watcher(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("connection watcher stopped")
+			e.SetWatcher(true)
+			return ctx.Err()
+		default:
+			if err := e.Ping(ctx); err != nil {
+				e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
+			}
 		}
+		time.Sleep(e.config.Timeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("watcher stopped and enity was shutted down")
-	e.SetWatcher(true)
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
@@ -199,53 +222,6 @@ func (e *Enity) Ping(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Connection watcher itself.
-func (e *Enity) watcher(ctx context.Context) bool {
-	logger := zerolog.Ctx(ctx)
-	// If we're shutting down - stop connection watcher.
-	if e.IsShuttingDown() {
-		if err := e.shutdown(ctx); err != nil {
-			logger.Err(err).Msg("shutdown")
-		}
-		return true
-	}
-
-	if err := e.Ping(ctx); err != nil {
-		e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
-	}
-
-	// If connection is nil - try to establish
-	// connection.
-	if e.conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection ...")
-
-		// Connect to database.
-		connOptions, err := e.config.Options()
-		if err != nil {
-			e.GetLogger(ctx).Fatal().Err(err).Msgf("failed parse options: %s", err)
-		}
-
-		// Set connection pooling options.
-		connOptions.MaxConnAge = e.config.MaxConnectionLifetime
-		connOptions.MinIdleConns = e.config.MinIdleConnections
-		connOptions.PoolSize = e.config.MaxOpenedConnections
-
-		conn := redis.NewClient(connOptions)
-		if conn.Ping(conn.Context()).Err() == nil {
-			e.GetLogger(ctx).Info().Msg("connection established")
-			e.conn = rejson.ExtendClient(conn)
-			return false
-		}
-		if !e.config.StartWatcher {
-			e.GetLogger(ctx).Fatal().Err(err).Msg("failed to connect")
-		}
-
-		e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to cache, will try to reconnect after %d seconds", e.config.Timeout)
-	}
-
-	return false
 }
 
 // NewMutex create new redis mutex
