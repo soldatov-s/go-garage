@@ -56,7 +56,7 @@ type EnityGateway interface {
 }
 
 type ManagerDeps struct {
-	Meta               *MetaDeps
+	Meta               *Meta
 	StatsHTTPEnityName string
 	Logger             *log.Logger
 	ErrorGroup         *errgroup.Group
@@ -140,7 +140,7 @@ func NewManager(deps *ManagerDeps, opts ...ManagerOption) *Manager {
 		MetricsStorage:     base.NewMetricsStorage(),
 		AliveCheckStorage:  base.NewAliveCheckStorage(),
 		ReadyCheckStorage:  base.NewReadyCheckStorage(),
-		meta:               NewMeta(deps.Meta),
+		meta:               deps.Meta,
 		enities:            make(map[string]EnityGateway),
 		enitiesOrder:       make([]string, 0, 16),
 		statsHTTPEnityName: deps.StatsHTTPEnityName,
