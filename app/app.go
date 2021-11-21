@@ -51,7 +51,7 @@ type EnityReadyGateway interface {
 
 type EnityGateway interface {
 	Shutdown(ctx context.Context) error
-	Start(ctx context.Context) error
+	Start(ctx context.Context, errorGroup *errgroup.Group) error
 	GetFullName() string
 }
 
@@ -216,7 +216,7 @@ func isExitSignal(err error) bool {
 
 func (a *Manager) Start(ctx context.Context) error {
 	for _, k := range a.enitiesOrder {
-		if err := a.enities[k].Start(ctx); err != nil {
+		if err := a.enities[k].Start(ctx, a.errorGroup); err != nil {
 			return errors.Wrapf(err, "start enity %q", k)
 		}
 	}
