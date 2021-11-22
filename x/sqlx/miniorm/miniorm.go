@@ -92,7 +92,7 @@ type ORM struct {
 	predefinedFields *PredefinedFields
 }
 
-func NewMiniORM(deps *ORMDeps) (*ORM, error) {
+func NewORM(deps *ORMDeps) (*ORM, error) {
 	requestParam := buildRequestParam(deps.Data)
 
 	predefinedFields := deps.PredefinedFields.GetPredefinedFields()
@@ -177,14 +177,14 @@ func (h *ORM) HardDeleteByID(ctx context.Context, id int64) error {
 
 // SoftDeleteByID soft deletes data from target by id
 // It marks data as deleted by changing deleted_at field
-func (h *ORM) SoftDeleteByID(id int64) error {
+func (h *ORM) SoftDeleteByID(ctx context.Context, id int64) error {
 	now := time.Now().UTC()
 	sqlRequest := h.conn.Rebind(
 		stringsx.JoinStrings(" ", "UPDATE", h.target, "SET",
 			h.predefinedFields.UpdatedAtField+"=$1",
 			h.predefinedFields.DeletedAtField+"=$2",
 			"WHERE "+h.predefinedFields.IDFieldName+"=$3"))
-	if _, err := h.conn.Exec(sqlRequest, now, now, id); err != nil {
+	if _, err := h.conn.ExecContext(ctx, sqlRequest, now, now, id); err != nil {
 		return errors.Wrap(err, "soft delete data")
 	}
 
