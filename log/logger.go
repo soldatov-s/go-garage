@@ -51,11 +51,11 @@ func (l *Logger) Zerolog() *zerolog.Logger {
 
 func buildLoggerOutput(isHumanFriendly, isNoColoredOutput bool) io.Writer {
 	if !isHumanFriendly {
-		return os.Stdout
+		return os.Stderr
 	}
 
 	output := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
+		Out:        os.Stderr,
 		NoColor:    isNoColoredOutput,
 		TimeFormat: time.RFC3339,
 	}
