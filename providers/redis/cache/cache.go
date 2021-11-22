@@ -28,6 +28,7 @@ func NewCache(ctx context.Context, name string, config *Config, conn *rejson.Cli
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config.SetDefault(),
 		conn:           conn,
+		name:           name,
 	}
 
 	if err := cache.buildMetrics(ctx); err != nil {
