@@ -38,8 +38,15 @@ type Enity struct {
 	prometheusMiddleware func(next echo.HandlerFunc) echo.HandlerFunc
 }
 
+func DefaultMiddlewares() []echo.MiddlewareFunc {
+	return []echo.MiddlewareFunc{
+		middleware.Recover(),
+		CORSDefault(),
+	}
+}
+
 // Create configures structure and creates new echo HTTP server.
-func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) {
+func NewEnity(ctx context.Context, name string, config *Config, middlewares ...echo.MiddlewareFunc) (*Enity, error) {
 	deps := &base.EnityDeps{
 		ProviderName: ProviderName,
 		Name:         name,
@@ -61,8 +68,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	}
 
 	server.Use(enity.prometheusMiddleware)
-	server.Use(middleware.Recover())
-	server.Use(config.Middlewares...)
+	server.Use(middlewares...)
 
 	enity.server = server
 

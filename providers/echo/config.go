@@ -40,9 +40,6 @@ type Config struct {
 	// HeaderReadTimeout sets headers reading timeout in seconds. Defaults
 	// to 5 seconds.
 	HeaderReadTimeout time.Duration `envconfig:"optional"`
-
-	// Middlewares for server endpoints
-	Middlewares []echo.MiddlewareFunc `envconfig:"-"`
 }
 
 // Checks for necessity for default values.

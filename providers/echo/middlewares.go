@@ -7,11 +7,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
-
-var ErrNotFoundZerolog = errors.New("not found zerolog")
 
 // CORSDefault allows requests from any origin wth GET, HEAD, PUT, POST or DELETE method.
 func CORSDefault() echo.MiddlewareFunc {
@@ -77,11 +75,11 @@ func HydrationZerolog(ctx context.Context) echo.MiddlewareFunc {
 	}
 }
 
-func GetZerologger(ec echo.Context) (*zerolog.Logger, error) {
+func GetZerologger(ec echo.Context) *zerolog.Logger {
 	l := ec.Get(zerologCtxKey)
 	logger, ok := l.(*zerolog.Logger)
 	if !ok {
-		return nil, ErrNotFoundZerolog
+		return &log.Logger
 	}
-	return logger, nil
+	return logger
 }
