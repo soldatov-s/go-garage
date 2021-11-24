@@ -13,7 +13,7 @@ type Config struct {
 	KeyPrefix string `envconfig:"optional"`
 	// ClearTime is a time of live item
 	ClearTime       time.Duration `envconfig:"optional"`
-	GlobalKeyPrefix string
+	GlobalKeyPrefix string        `envconfig:"-"`
 }
 
 // SetDefault checks connection options. If required field is empty - it will
