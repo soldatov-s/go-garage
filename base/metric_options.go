@@ -160,9 +160,7 @@ func (mmo *MapMetricsOptions) Add(options *MetricOptions) error {
 		return ErrEmptyMetricName
 	}
 
-	if options.Func == nil {
-		return ErrFuncIsNil
-	}
+	// Not all prometheus metrics have func, therefore we not check Func field
 
 	if _, ok := mmo.options[options.Name]; ok {
 		return errors.Wrapf(ErrConflictName, "name: %s", options.Name)
