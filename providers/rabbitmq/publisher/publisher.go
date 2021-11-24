@@ -3,6 +3,7 @@ package rabbitmqpub
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -26,6 +27,7 @@ type Publisher struct {
 	conn        Connector
 	isConnected bool
 	name        string
+	muConn      sync.Mutex
 
 	okMessages  func(ctx context.Context) error
 	badMessages func(ctx context.Context) error
@@ -50,6 +52,12 @@ func NewPublisher(ctx context.Context, name string, config *Config, conn Connect
 }
 
 func (p *Publisher) connect(_ context.Context) error {
+	p.muConn.Lock()
+	defer p.muConn.Unlock()
+	if p.isConnected {
+		return nil
+	}
+
 	if err := p.conn.Channel().ExchangeDeclare(p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
@@ -70,6 +78,8 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 		return errors.Wrap(err, "marshal message")
 	}
 
+	ampqMsg := buildMessage(body)
+
 	logger.Debug().Msgf("send message: %s", string(body))
 
 	if !p.isConnected {
@@ -78,13 +88,11 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 		}
 	}
 
-	if err := p.conn.Channel().Publish(p.config.ExchangeName, p.config.RoutingKey, false,
-		false, amqp.Publishing{ContentType: "text/plain", Body: body}); err != nil {
-		p.isConnected = false
-		if errBadMsg := p.badMessages(ctx); errBadMsg != nil {
-			return errors.Wrap(errBadMsg, "count bad messages")
+	// We try to send message twice. Between attempts we try to reconnect.
+	if err := p.sendMessage(ctx, ampqMsg); err != nil {
+		if errRetryPub := p.sendMessage(ctx, ampqMsg); err != nil {
+			return errors.Wrap(errRetryPub, "retry publish a message")
 		}
-		return errors.Wrap(err, "publish a message")
 	}
 
 	if err := p.okMessages(ctx); err != nil {
@@ -92,6 +100,39 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 	}
 
 	return nil
+}
+
+func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) error {
+	logger := zerolog.Ctx(ctx)
+	if !p.isConnected {
+		if err := p.connect(ctx); err != nil {
+			logger.Err(err).Msg("connect publisher to rabbitMQ")
+		}
+	}
+
+	if err := p.conn.Channel().Publish(
+		p.config.ExchangeName,
+		p.config.RoutingKey,
+		false,
+		false,
+		*ampqMsg,
+	); err != nil {
+		p.muConn.Lock()
+		p.isConnected = false
+		p.muConn.Unlock()
+		if errBadMsg := p.badMessages(ctx); errBadMsg != nil {
+			return errors.Wrap(errBadMsg, "count bad messages")
+		}
+		return errors.Wrap(err, "publish a message")
+	}
+	return nil
+}
+
+func buildMessage(body []byte) *amqp.Publishing {
+	return &amqp.Publishing{
+		ContentType: "text/plain",
+		Body:        body,
+	}
 }
 
 func (p *Publisher) buildMetrics(_ context.Context) error {
