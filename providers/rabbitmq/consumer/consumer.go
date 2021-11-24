@@ -127,6 +127,7 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 			errorGroup.Go(func() error {
 				return c.subscribe(ctx, errorGroup, subscriber)
 			})
+			return nil
 		}
 	}
 }
