@@ -66,6 +66,12 @@ func (c *Connection) connect(_ context.Context) error {
 
 // Connection watcher goroutine entrypoint.
 func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
+	if !c.isClosed {
+		if err := c.connect(ctx); err != nil {
+			return errors.Wrap(err, "connect")
+		}
+	}
+
 	errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
 		logger.Info().Msg("starting connection watcher")
