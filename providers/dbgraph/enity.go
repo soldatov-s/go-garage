@@ -8,9 +8,9 @@ import (
 	"github.com/dgraph-io/dgo/v210"
 	"github.com/dgraph-io/dgo/v210/protos/api"
 	"github.com/pkg/errors"
-	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/x/stringsx"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
@@ -47,13 +47,6 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		Enity:             baseEnity,
 		config:            config.SetDefault(),
 	}
-	if err := enity.buildMetrics(ctx); err != nil {
-		return nil, errors.Wrap(err, "build metrics")
-	}
-
-	if err := enity.buildReadyHandlers(ctx); err != nil {
-		return nil, errors.Wrap(err, "build ready handlers")
-	}
 
 	return enity, nil
 }
@@ -88,41 +81,63 @@ func (e *Enity) Shutdown(ctx context.Context) error {
 }
 
 // Start starts connection workers and connection procedure itself.
-func (e *Enity) Start(ctx context.Context) error {
+func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
+	logger := e.GetLogger(ctx)
+
+	if e.conn != nil {
+		return nil
+	}
+	logger.Info().Msg("establishing connection to database...")
+	// Dial a gRPC connection. The address to dial to can be configured when
+	// setting up the dgraph cluster.
+	d, err := grpc.Dial(e.config.DSN, grpc.WithInsecure())
+	if err != nil {
+		return errors.Wrap(err, "dial")
+	}
+
+	logger.Info().Msg("database connection established")
+	e.grpcConn = d
+	e.conn = dgo.NewDgraphClient(
+		api.NewDgraphClient(d),
+	)
+
+	if err := e.buildMetrics(ctx); err != nil {
+		return errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return errors.Wrap(err, "build ready handlers")
+	}
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.IsWatcherStopped() {
-		if e.config.StartWatcher {
-			e.SetWatcher(false)
-			go e.startWatcher(ctx)
-		} else {
-			// Manually start the connection once to establish connection
-			_ = e.watcher(ctx)
-		}
+		e.SetWatcher(false)
+		errorGroup.Go(func() error {
+			return e.startWatcher(ctx)
+		})
 	}
 
 	return nil
 }
 
 // Connection watcher goroutine entrypoint.
-func (e *Enity) startWatcher(ctx context.Context) {
+func (e *Enity) startWatcher(ctx context.Context) error {
 	e.GetLogger(ctx).Info().Msg("starting connection watcher")
 
-	ticker := time.NewTicker(e.config.Timeout)
-
-	// First start - manually.
-	_ = e.watcher(ctx)
-
-	// Then - every ticker tick.
-	for range ticker.C {
-		if e.watcher(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("connection watcher stopped")
+			e.SetWatcher(true)
+			return ctx.Err()
+		default:
+			if err := e.Ping(ctx); err != nil {
+				e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
+			}
 		}
+		time.Sleep(e.config.Timeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("connection watcher stopped and connection to database was shutted down")
-	e.SetWatcher(true)
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
@@ -151,50 +166,6 @@ func (e *Enity) Ping(ctx context.Context) error {
 		return errors.New("connection not alive")
 	}
 	return nil
-}
-
-// Connection watcher itself.
-func (e *Enity) watcher(ctx context.Context) bool {
-	logger := zerolog.Ctx(ctx)
-	// If we're shutting down - stop connection watcher.
-	if e.IsShuttingDown() {
-		if err := e.shutdown(ctx); err != nil {
-			logger.Err(err).Msg("shutdown")
-		}
-		return true
-	}
-
-	if err := e.Ping(ctx); err != nil {
-		e.GetLogger(ctx).Error().Err(err).Msg("database connection lost")
-	}
-
-	// If connection is nil - try to establish (or reestablish)
-	// connection.
-	if e.conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection to database...")
-		// Dial a gRPC connection. The address to dial to can be configured when
-		// setting up the dgraph cluster.
-		d, err := grpc.Dial(e.config.DSN, grpc.WithInsecure())
-		if err == nil {
-			e.GetLogger(ctx).Info().Msg("database connection established")
-			e.grpcConn = d
-			e.conn = dgo.NewDgraphClient(
-				api.NewDgraphClient(d),
-			)
-
-			return false
-		}
-
-		if !e.config.StartWatcher {
-			e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to database")
-			return true
-		}
-
-		e.GetLogger(ctx).Error().Err(err).Msgf("failed to connect to database, reconnect after %d seconds", e.config.Timeout)
-		return true
-	}
-
-	return false
 }
 
 // GetMetrics return map of the metrics from database connection

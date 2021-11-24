@@ -47,13 +47,6 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		config:            config.SetDefault(),
 		caches:            make(map[string]*rediscache.Cache),
 	}
-	if err := enity.buildMetrics(ctx); err != nil {
-		return nil, errors.Wrap(err, "build metrics")
-	}
-
-	if err := enity.buildReadyHandlers(ctx); err != nil {
-		return nil, errors.Wrap(err, "build ready handlers")
-	}
 
 	return enity, nil
 }
@@ -140,31 +133,39 @@ func (e *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, conn
 // Start starts connection workers and connection procedure itself.
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
-	ctx = logger.WithContext(ctx)
-	// If connection is nil - try to establish
-	// connection.
-	if e.conn == nil {
-		e.GetLogger(ctx).Info().Msg("establishing connection ...")
 
-		// Connect to database.
-		connOptions, err := e.config.Options()
-		if err != nil {
-			e.GetLogger(ctx).Fatal().Err(err).Msgf("failed parse options: %s", err)
-		}
-
-		// Set connection pooling options.
-		connOptions.MaxConnAge = e.config.MaxConnectionLifetime
-		connOptions.MinIdleConns = e.config.MinIdleConnections
-		connOptions.PoolSize = e.config.MaxOpenedConnections
-
-		conn := redis.NewClient(connOptions)
-		if _, errPing := conn.Ping(ctx).Result(); errPing != nil {
-			return errors.Wrap(errPing, "connect to enity")
-		}
-
-		e.conn = rejson.ExtendClient(conn)
-		e.GetLogger(ctx).Info().Msg("connection established")
+	if e.conn != nil {
+		return nil
 	}
+	logger.Info().Msg("establishing connection ...")
+
+	// Connect to database.
+	connOptions, err := e.config.Options()
+	if err != nil {
+		return errors.Wrap(err, "parse options")
+	}
+
+	// Set connection pooling options.
+	connOptions.MaxConnAge = e.config.MaxConnectionLifetime
+	connOptions.MinIdleConns = e.config.MinIdleConnections
+	connOptions.PoolSize = e.config.MaxOpenedConnections
+
+	conn := redis.NewClient(connOptions)
+	if _, errPing := conn.Ping(ctx).Result(); errPing != nil {
+		return errors.Wrap(errPing, "connect to enity")
+	}
+
+	e.conn = rejson.ExtendClient(conn)
+
+	if err := e.buildMetrics(ctx); err != nil {
+		return errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return errors.Wrap(err, "build ready handlers")
+	}
+
+	logger.Info().Msg("connection established")
 
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.

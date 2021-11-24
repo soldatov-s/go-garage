@@ -9,13 +9,14 @@ import (
 	"github.com/gopcua/opcua/monitor"
 	"github.com/gopcua/opcua/ua"
 	"github.com/pkg/errors"
-	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"golang.org/x/sync/errgroup"
 )
 
 const ProviderName = "gopcua"
+
+var ErrFindSuitableEndpoint = errors.New("failed to find suitable endpoint")
 
 // Enity is a connection controlling structure. It controls
 // connection, asynchronous queue and everything that related to
@@ -49,13 +50,6 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		ReadyCheckStorage: base.NewReadyCheckStorage(),
 		Enity:             baseEnity,
 		config:            config.SetDefault(),
-	}
-	if err := enity.buildMetrics(ctx); err != nil {
-		return nil, errors.Wrap(err, "build metrics")
-	}
-
-	if err := enity.buildReadyHandlers(ctx); err != nil {
-		return nil, errors.Wrap(err, "build ready handlers")
 	}
 
 	return enity, nil
@@ -95,33 +89,62 @@ func (e *Enity) Shutdown(ctx context.Context) error {
 }
 
 // Start starts connection workers and connection procedure itself.
-func (e *Enity) Start(ctx context.Context) error {
+func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
+	logger := e.GetLogger(ctx)
+
+	// If connection is nil - try to establish (or reestablish)
+	// connection.
+	if e.conn != nil {
+		return nil
+	}
+	// Connect to opc ua.
+	endpoints, err := opcua.GetEndpoints(e.config.DSN)
+	if err != nil {
+		return errors.Wrap(err, "get endpoints")
+	}
+
+	ep := opcua.SelectEndpoint(endpoints, e.config.SecurityPolicy, ua.MessageSecurityModeFromString(e.config.SecurityMode))
+	if ep == nil {
+		return ErrFindSuitableEndpoint
+	}
+
+	logger.Info().Msgf("%s %s", ep.SecurityPolicyURI, ep.SecurityMode)
+
+	opts := []opcua.Option{
+		opcua.SecurityPolicy(e.config.SecurityPolicy),
+		opcua.SecurityModeString(e.config.SecurityPolicy),
+		opcua.CertificateFile(e.config.CertificateFile),
+		opcua.PrivateKeyFile(e.config.PrivateKeyFile),
+		opcua.AuthAnonymous(),
+		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeAnonymous),
+	}
+
+	opcUAConn := opcua.NewClient(e.config.DSN, opts...)
+	if err := opcUAConn.Connect(ctx); err != nil {
+		return errors.Wrap(err, "connect opc ua")
+	}
+
+	e.conn = opcUAConn
+	if err := e.buildMetrics(ctx); err != nil {
+		return errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return errors.Wrap(err, "build ready handlers")
+	}
+
+	logger.Info().Msg("opc ua connection established")
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.IsWatcherStopped() {
-		if e.config.StartWatcher {
-			e.SetWatcher(false)
-			go e.startWatcher(ctx)
-		} else {
-			// Manually start the connection once to establish connection
-			_ = e.watcher(ctx)
-		}
+		e.SetWatcher(false)
+		errorGroup.Go(func() error {
+			return e.startWatcher(ctx)
+		})
 	}
 
 	return nil
-}
-
-// WaitForEstablishing will block execution until connection will be
-// successfully established.
-func (e *Enity) WaitForEstablishing(ctx context.Context) {
-	for {
-		if e.conn != nil {
-			break
-		}
-
-		e.GetLogger(ctx).Debug().Msg("enity isn't ready")
-		time.Sleep(time.Millisecond * 100)
-	}
 }
 
 // SubscribeOptions describes interface for subscriber
@@ -190,23 +213,22 @@ func (e *Enity) SubscribeNodeID(ctx context.Context, nodeID string) error {
 }
 
 // Connection watcher goroutine entrypoint.
-func (e *Enity) startWatcher(ctx context.Context) {
-	e.GetLogger(ctx).Info().Msg("starting watcher...")
-	ticker := time.NewTicker(e.config.Timeout)
+func (e *Enity) startWatcher(ctx context.Context) error {
+	e.GetLogger(ctx).Info().Msg("starting connection watcher")
 
-	// First start - manually.
-	_ = e.watcher(ctx)
-
-	// Then - every ticker tick.
-	for range ticker.C {
-		if e.watcher(ctx) {
-			break
+	for {
+		select {
+		case <-ctx.Done():
+			e.GetLogger(ctx).Info().Msg("connection watcher stopped")
+			e.SetWatcher(true)
+			return ctx.Err()
+		default:
+			if err := e.Ping(ctx); err != nil {
+				e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
+			}
 		}
+		time.Sleep(e.config.Timeout)
 	}
-
-	ticker.Stop()
-	e.GetLogger(ctx).Info().Msg("watcher stopped and enity was shutted down")
-	e.SetWatcher(true)
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
@@ -235,67 +257,6 @@ func (e *Enity) Ping(ctx context.Context) error {
 		return errors.Wrap(err, "get endpoints")
 	}
 	return nil
-}
-
-// Connection watcher itself.
-func (e *Enity) watcher(ctx context.Context) bool {
-	logger := zerolog.Ctx(ctx)
-	// If we're shutting down - stop connection watcher.
-	if e.IsShuttingDown() {
-		if err := e.shutdown(ctx); err != nil {
-			logger.Err(err).Msg("shutdown")
-		}
-		return true
-	}
-
-	if err := e.Ping(ctx); err != nil {
-		e.GetLogger(ctx).Error().Err(err).Msg("connection lost")
-	}
-
-	// If connection is nil - try to establish (or reestablish)
-	// connection.
-	if e.conn != nil {
-		return false
-	}
-	e.GetLogger(ctx).Info().Msg("establishing connection to opc ua...")
-	// Connect to opc ua.
-	endpoints, err := opcua.GetEndpoints(e.config.DSN)
-	if err != nil {
-		e.GetLogger(ctx).Fatal().Err(err).Msg("failed to get endpoints")
-	}
-
-	ep := opcua.SelectEndpoint(endpoints, e.config.SecurityPolicy, ua.MessageSecurityModeFromString(e.config.SecurityMode))
-	if ep == nil {
-		e.GetLogger(ctx).Fatal().Err(err).Msg("failed to find suitable endpoint")
-	} else {
-		e.GetLogger(ctx).Info().Msgf("%s %s", ep.SecurityPolicyURI, ep.SecurityMode)
-	}
-
-	opts := []opcua.Option{
-		opcua.SecurityPolicy(e.config.SecurityPolicy),
-		opcua.SecurityModeString(e.config.SecurityPolicy),
-		opcua.CertificateFile(e.config.CertificateFile),
-		opcua.PrivateKeyFile(e.config.PrivateKeyFile),
-		opcua.AuthAnonymous(),
-		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeAnonymous),
-	}
-
-	opcUAConn := opcua.NewClient(e.config.DSN, opts...)
-	err = opcUAConn.Connect(ctx)
-	if err == nil {
-		e.GetLogger(ctx).Info().Msg("opc ua connection established")
-		e.conn = opcUAConn
-
-		return false
-	}
-
-	if !e.config.StartWatcher {
-		e.GetLogger(ctx).Fatal().Err(err).Msgf("connect to opc ua")
-		return true
-	}
-
-	e.GetLogger(ctx).Error().Err(err).Msgf("connect to opc ua, reconnect after %d seconds", e.config.Timeout)
-	return true
 }
 
 // GetMetrics return map of the metrics from database connection

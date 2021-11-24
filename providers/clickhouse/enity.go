@@ -52,13 +52,6 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		config:             config.SetDefault(),
 		queueWorkerStopped: true,
 	}
-	if err := enity.buildMetrics(ctx); err != nil {
-		return nil, errors.Wrap(err, "build metrics")
-	}
-
-	if err := enity.buildReadyHandlers(ctx); err != nil {
-		return nil, errors.Wrap(err, "build ready handlers")
-	}
 
 	return enity, nil
 }
@@ -125,28 +118,36 @@ func (e *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, conn
 // Start starts connection workers and connection procedure itself.
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
-	ctx = logger.WithContext(ctx)
-	// If connection is nil - try to establish (or reestablish)
-	// connection.
-	if e.conn == nil {
-		logger.Info().Msg("establishing connection to database...")
-		// Connect to database.
-		var err error
-		e.conn, err = sqlx.Connect(ProviderName, e.config.ComposeDSN())
-		if err != nil {
-			return errors.Wrap(err, "connect to enity")
-		}
-		logger.Info().Msg("database connection established")
 
-		// Migrate database.
-		m := migrations.NewMigrator(ProviderName, e.conn.DB, e.config.Migrate)
-		if err := m.Migrate(ctx); err != nil {
-			return errors.Wrap(err, "migrate")
-		}
+	if e.conn != nil {
+		return nil
+	}
 
-		// Set connection pooling options.
-		e.SetConnPoolLifetime(e.config.MaxConnectionLifetime)
-		e.SetConnPoolLimits(e.config.MaxIdleConnections, e.config.MaxOpenedConnections)
+	logger.Info().Msg("establishing connection to database...")
+	// Connect to database.
+	var err error
+	e.conn, err = sqlx.Connect(ProviderName, e.config.ComposeDSN())
+	if err != nil {
+		return errors.Wrap(err, "connect to enity")
+	}
+	logger.Info().Msg("database connection established")
+
+	// Migrate database.
+	m := migrations.NewMigrator(ProviderName, e.conn.DB, e.config.Migrate)
+	if err := m.Migrate(ctx); err != nil {
+		return errors.Wrap(err, "migrate")
+	}
+
+	// Set connection pooling options.
+	e.SetConnPoolLifetime(e.config.MaxConnectionLifetime)
+	e.SetConnPoolLimits(e.config.MaxIdleConnections, e.config.MaxOpenedConnections)
+
+	if err := e.buildMetrics(ctx); err != nil {
+		return errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return errors.Wrap(err, "build ready handlers")
 	}
 
 	// Connection watcher will be started in any case, but only if

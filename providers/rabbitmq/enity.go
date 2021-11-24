@@ -49,13 +49,6 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		consumers:         make(map[string]*rabbitmqconsum.Consumer),
 		publishers:        make(map[string]*rabbitmqpub.Publisher),
 	}
-	if err := enity.buildMetrics(ctx); err != nil {
-		return nil, errors.Wrap(err, "build metrics")
-	}
-
-	if err := enity.buildReadyHandlers(ctx); err != nil {
-		return nil, errors.Wrap(err, "build ready handlers")
-	}
 
 	return enity, nil
 }
@@ -121,22 +114,30 @@ func (e *Enity) Ping(ctx context.Context) error {
 
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
-	ctx = logger.WithContext(ctx)
-	// If connection is nil - try to establish (or reestablish)
-	// connection.
-	if e.conn == nil {
-		logger.Info().Msg("establishing connection...")
-		var err error
 
-		e.conn, err = NewConnection(e.config.DSN, e.conn.backoffPolicy)
-		if err != nil {
-			return errors.Wrap(err, "create connection")
-		}
-
-		if err := e.conn.Connect(ctx, errorGroup); err != nil {
-			return errors.Wrap(err, "connect")
-		}
+	if e.conn != nil {
+		return nil
 	}
+	logger.Info().Msg("establishing connection...")
+	var err error
+
+	e.conn, err = NewConnection(e.config.DSN, e.conn.backoffPolicy)
+	if err != nil {
+		return errors.Wrap(err, "create connection")
+	}
+
+	if err := e.conn.Connect(ctx, errorGroup); err != nil {
+		return errors.Wrap(err, "connect")
+	}
+
+	if err := e.buildMetrics(ctx); err != nil {
+		return errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return errors.Wrap(err, "build ready handlers")
+	}
+
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.
 	if e.IsWatcherStopped() {
