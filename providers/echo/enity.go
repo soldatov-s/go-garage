@@ -110,10 +110,10 @@ func (e *Enity) APIGroup(ctx context.Context,
 	guiSwaggerSpec.Info.Version = buildInfo
 	swaggerDoc := swagger.NewDoc(guiSwaggerSpec)
 
-	swaggerName := e.config.Address + "/api/v1/"
+	swaggerName := e.config.Address + "/api/v" + version + "/"
 	swagger.Register(swaggerName, swaggerDoc)
 
-	apiGroup.GET("/swagger/api/v1/*",
+	e.server.GET("/swagger/api/v"+version+"/*",
 		swagger.EchoHandler(
 			ctx,
 			swagger.Fill("doc.json", swaggerName), // The url pointing to API definition"
