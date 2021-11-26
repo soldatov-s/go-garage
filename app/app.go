@@ -12,12 +12,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/log"
 	"github.com/soldatov-s/go-garage/x/httpx"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"golang.org/x/sync/errgroup"
 )
+
+//go:generate mockgen --source=./app.go -destination=./app_mocks_test.go -package=app_test
 
 const (
 	ReadyEndpoint   = "/health/ready"
@@ -142,7 +145,6 @@ func NewManager(deps *ManagerDeps, opts ...ManagerOption) *Manager {
 		ReadyCheckStorage:  base.NewReadyCheckStorage(),
 		meta:               deps.Meta,
 		enities:            make(map[string]EnityGateway),
-		enitiesOrder:       make([]string, 0, 16),
 		statsHTTPEnityName: deps.StatsHTTPEnityName,
 		register:           prometheus.DefaultRegisterer,
 		logger:             deps.Logger,
@@ -215,7 +217,9 @@ func isExitSignal(err error) bool {
 }
 
 func (a *Manager) Start(ctx context.Context) error {
+	logger := zerolog.Ctx(ctx)
 	for _, k := range a.enitiesOrder {
+		logger.Debug().Msgf("start enity %q", k)
 		if err := a.enities[k].Start(ctx, a.errorGroup); err != nil {
 			return errors.Wrapf(err, "start enity %q", k)
 		}
@@ -239,11 +243,15 @@ func (a *Manager) Shutdown(ctx context.Context) error {
 }
 
 func (a *Manager) Add(ctx context.Context, e EnityGateway) error {
+	logger := zerolog.Ctx(ctx)
+
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if _, ok := a.enities[e.GetFullName()]; ok {
 		return base.ErrConflictName
 	}
+
+	logger.Debug().Msgf("add %q", e.GetFullName())
 
 	a.enities[e.GetFullName()] = e
 	a.enitiesOrder = append(a.enitiesOrder, e.GetFullName())

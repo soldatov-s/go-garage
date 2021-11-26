@@ -5,6 +5,10 @@ all: help
 init: ## Init stable version
 	GO111MODULE=on go mod vendor
 
+.PHONY: gen-mocks
+gen-mocks: ## Run generate mocks
+	go generate ./...
+
 .PHONY: test
 test: ## Run tests
 	@CGO_ENABLED=0 go test -mod vendor -test.v -cover ./...

@@ -9,6 +9,7 @@ require (
 	github.com/dgraph-io/dgo/v210 v210.0.0-20210825123656-d3f867fe9cc3
 	github.com/getkin/kin-openapi v0.81.0
 	github.com/go-redis/redis/v8 v8.4.8
+	github.com/golang/mock v1.4.4
 	github.com/google/uuid v1.1.4
 	github.com/gopcua/opcua v0.0.0-20201219213726-4f8488dd4b82
 	github.com/jmoiron/sqlx v1.2.0
@@ -21,7 +22,7 @@ require (
 	github.com/soldatov-s/go-swagger v1.2.0 // indirect
 	github.com/spf13/cobra v1.0.0 // indirect
 	github.com/streadway/amqp v1.0.0
-	github.com/stretchr/testify v1.7.0 // indirect
+	github.com/stretchr/testify v1.7.0
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2
 	go.mongodb.org/mongo-driver v1.4.4
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
@@ -34,6 +35,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
@@ -52,6 +54,7 @@ require (
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.25.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
@@ -68,4 +71,5 @@ require (
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
