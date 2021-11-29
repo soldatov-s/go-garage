@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pressly/goose"
@@ -97,9 +96,6 @@ func NewMigrator(dialect string, conn *sql.DB, config *Config) *Migrator {
 
 // Migrates database.
 func (m *Migrator) Migrate(ctx context.Context) error {
-	if err := m.waitConn(ctx); err != nil {
-		return errors.Wrap(err, "wait connect")
-	}
 	logger := zerolog.Ctx(ctx).With().Str("subsystem", "database migrations").Logger()
 
 	err := m.migrateSchema(ctx)
@@ -138,21 +134,6 @@ func (m *Migrator) setMigrationFlag() {
 	// again if connection to database was re-established.
 	m.config.Action = ActionNothing
 	m.migratedMutex.Unlock()
-}
-
-func (m *Migrator) waitConn(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			if m.db != nil {
-				break
-			}
-			return nil
-		}
-		time.Sleep(time.Millisecond * 500)
-	}
 }
 
 // InCode represents informational struct for database migration
