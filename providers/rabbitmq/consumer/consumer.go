@@ -7,23 +7,20 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
+	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	"github.com/streadway/amqp"
 	"golang.org/x/sync/errgroup"
 )
-
-type Connector interface {
-	Channel() *amqp.Channel
-}
 
 // Consumer is a RabbitConsumer
 type Consumer struct {
 	*base.MetricsStorage
 	config *Config
-	conn   Connector
+	conn   *rabbitmqcon.Connection
 	name   string
 }
 
-func NewConsumer(ctx context.Context, name string, config *Config, conn Connector) (*Consumer, error) {
+func NewConsumer(ctx context.Context, name string, config *Config, conn *rabbitmqcon.Connection) (*Consumer, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/base"
+	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	rabbitmqconsum "github.com/soldatov-s/go-garage/providers/rabbitmq/consumer"
 	rabbitmqpub "github.com/soldatov-s/go-garage/providers/rabbitmq/publisher"
 	"github.com/soldatov-s/go-garage/x/stringsx"
@@ -24,7 +25,7 @@ type Enity struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	config     *Config
-	conn       *Connection
+	conn       *rabbitmqcon.Connection
 	consumers  map[string]*rabbitmqconsum.Consumer
 	publishers map[string]*rabbitmqpub.Publisher
 }
@@ -53,7 +54,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	return enity, nil
 }
 
-func (e *Enity) GetConn() *Connection {
+func (e *Enity) GetConn() *rabbitmqcon.Connection {
 	return e.conn
 }
 
@@ -121,7 +122,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger.Info().Msg("establishing connection...")
 	var err error
 
-	e.conn, err = NewConnection(e.config.DSN, e.config.BackoffPolicy)
+	e.conn, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
 	if err != nil {
 		return errors.Wrap(err, "create connection")
 	}

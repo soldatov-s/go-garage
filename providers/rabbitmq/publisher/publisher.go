@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
+	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"github.com/streadway/amqp"
 )
@@ -16,15 +17,11 @@ const (
 	ProviderName = "rabbitmq"
 )
 
-type Connector interface {
-	Channel() *amqp.Channel
-}
-
 // Publisher is a RabbitPublisher
 type Publisher struct {
 	*base.MetricsStorage
 	config      *Config
-	conn        Connector
+	conn        *rabbitmqcon.Connection
 	isConnected bool
 	name        string
 	muConn      sync.Mutex
@@ -33,7 +30,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, name string, config *Config, conn Connector) (*Publisher, error) {
+func NewPublisher(ctx context.Context, name string, config *Config, conn *rabbitmqcon.Connection) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
