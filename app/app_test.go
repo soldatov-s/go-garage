@@ -95,10 +95,9 @@ func TestAdd(t *testing.T) {
 			ctx = logger.Zerolog().WithContext(ctx)
 
 			manager := app.NewManager(&app.ManagerDeps{
-				Meta:               tt.meta,
-				StatsHTTPEnityName: "garage_echo",
-				Logger:             logger,
-				ErrorGroup:         runner,
+				Meta:       tt.meta,
+				Logger:     logger,
+				ErrorGroup: runner,
 			})
 
 			err = tt.action(ctx, ctrl, manager)

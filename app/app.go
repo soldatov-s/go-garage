@@ -59,10 +59,9 @@ type EnityGateway interface {
 }
 
 type ManagerDeps struct {
-	Meta               *Meta
-	StatsHTTPEnityName string
-	Logger             *log.Logger
-	ErrorGroup         *errgroup.Group
+	Meta       *Meta
+	Logger     *log.Logger
+	ErrorGroup *errgroup.Group
 }
 
 type MetaDeps struct {
@@ -140,16 +139,15 @@ func WithCustomSignalas(signals []os.Signal) ManagerOption {
 
 func NewManager(deps *ManagerDeps, opts ...ManagerOption) *Manager {
 	app := &Manager{
-		MetricsStorage:     base.NewMetricsStorage(),
-		AliveCheckStorage:  base.NewAliveCheckStorage(),
-		ReadyCheckStorage:  base.NewReadyCheckStorage(),
-		meta:               deps.Meta,
-		enities:            make(map[string]EnityGateway),
-		statsHTTPEnityName: deps.StatsHTTPEnityName,
-		register:           prometheus.DefaultRegisterer,
-		logger:             deps.Logger,
-		signals:            defaultOSSignals(),
-		errorGroup:         deps.ErrorGroup,
+		MetricsStorage:    base.NewMetricsStorage(),
+		AliveCheckStorage: base.NewAliveCheckStorage(),
+		ReadyCheckStorage: base.NewReadyCheckStorage(),
+		meta:              deps.Meta,
+		enities:           make(map[string]EnityGateway),
+		register:          prometheus.DefaultRegisterer,
+		logger:            deps.Logger,
+		signals:           defaultOSSignals(),
+		errorGroup:        deps.ErrorGroup,
 	}
 
 	for _, opt := range opts {
@@ -157,6 +155,10 @@ func NewManager(deps *ManagerDeps, opts ...ManagerOption) *Manager {
 	}
 
 	return app
+}
+
+func (a *Manager) SetStatsHTTPEnityName(name string) {
+	a.statsHTTPEnityName = name
 }
 
 func defaultOSSignals() []os.Signal {
