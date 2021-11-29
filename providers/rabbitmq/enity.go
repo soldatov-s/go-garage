@@ -121,7 +121,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger.Info().Msg("establishing connection...")
 	var err error
 
-	e.conn, err = NewConnection(e.config.DSN, e.conn.backoffPolicy)
+	e.conn, err = NewConnection(e.config.DSN, e.config.BackoffPolicy)
 	if err != nil {
 		return errors.Wrap(err, "create connection")
 	}
