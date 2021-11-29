@@ -21,7 +21,7 @@ const (
 type Publisher struct {
 	*base.MetricsStorage
 	config      *Config
-	conn        *rabbitmqcon.Connection
+	conn        **rabbitmqcon.Connection
 	isConnected bool
 	name        string
 	muConn      sync.Mutex
@@ -30,7 +30,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, name string, config *Config, conn *rabbitmqcon.Connection) (*Publisher, error) {
+func NewPublisher(ctx context.Context, name string, config *Config, conn **rabbitmqcon.Connection) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -55,7 +55,8 @@ func (p *Publisher) connect(_ context.Context) error {
 		return nil
 	}
 
-	if err := p.conn.Channel().ExchangeDeclare(p.config.ExchangeName, "direct", true,
+	conn := *p.conn
+	if err := conn.Channel().ExchangeDeclare(p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return errors.Wrap(err, "declare a exchange")
@@ -107,7 +108,8 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		}
 	}
 
-	if err := p.conn.Channel().Publish(
+	conn := *p.conn
+	if err := conn.Channel().Publish(
 		p.config.ExchangeName,
 		p.config.RoutingKey,
 		false,

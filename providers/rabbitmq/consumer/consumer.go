@@ -16,11 +16,11 @@ import (
 type Consumer struct {
 	*base.MetricsStorage
 	config *Config
-	conn   *rabbitmqcon.Connection
+	conn   **rabbitmqcon.Connection
 	name   string
 }
 
-func NewConsumer(ctx context.Context, name string, config *Config, conn *rabbitmqcon.Connection) (*Consumer, error) {
+func NewConsumer(ctx context.Context, name string, config *Config, conn **rabbitmqcon.Connection) (*Consumer, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -36,7 +36,7 @@ func NewConsumer(ctx context.Context, name string, config *Config, conn *rabbitm
 }
 
 func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
-	channel := c.conn.Channel()
+	channel := (*c.conn).Channel()
 
 	if err := channel.ExchangeDeclare(c.config.ExchangeName, "direct", true,
 		false, false,
