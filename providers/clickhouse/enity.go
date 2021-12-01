@@ -45,7 +45,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		return nil, base.ErrInvalidEnityOptions
 	}
 
-	enity := &Enity{
+	e := &Enity{
 		MetricsStorage:     base.NewMetricsStorage(),
 		ReadyCheckStorage:  base.NewReadyCheckStorage(),
 		Enity:              baseEnity,
@@ -53,7 +53,15 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		queueWorkerStopped: true,
 	}
 
-	return enity, nil
+	if err := e.buildMetrics(ctx); err != nil {
+		return nil, errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return nil, errors.Wrap(err, "build ready handlers")
+	}
+
+	return e, nil
 }
 
 func (e *Enity) GetConn() *sqlx.DB {
@@ -141,14 +149,6 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	// Set connection pooling options.
 	e.SetConnPoolLifetime(e.config.MaxConnectionLifetime)
 	e.SetConnPoolLimits(e.config.MaxIdleConnections, e.config.MaxOpenedConnections)
-
-	if err := e.buildMetrics(ctx); err != nil {
-		return errors.Wrap(err, "build metrics")
-	}
-
-	if err := e.buildReadyHandlers(ctx); err != nil {
-		return errors.Wrap(err, "build ready handlers")
-	}
 
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.

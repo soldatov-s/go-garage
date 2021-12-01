@@ -40,7 +40,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		return nil, base.ErrInvalidEnityOptions
 	}
 
-	enity := &Enity{
+	e := &Enity{
 		MetricsStorage:    base.NewMetricsStorage(),
 		ReadyCheckStorage: base.NewReadyCheckStorage(),
 		Enity:             baseEnity,
@@ -48,7 +48,15 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		caches:            make(map[string]*rediscache.Cache),
 	}
 
-	return enity, nil
+	if err := e.buildMetrics(ctx); err != nil {
+		return nil, errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return nil, errors.Wrap(err, "build ready handlers")
+	}
+
+	return e, nil
 }
 
 func (e *Enity) GetConn() *rejson.Client {
@@ -156,14 +164,6 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	}
 
 	e.conn = rejson.ExtendClient(conn)
-
-	if err := e.buildMetrics(ctx); err != nil {
-		return errors.Wrap(err, "build metrics")
-	}
-
-	if err := e.buildReadyHandlers(ctx); err != nil {
-		return errors.Wrap(err, "build ready handlers")
-	}
 
 	logger.Info().Msg("connection established")
 

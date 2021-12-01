@@ -45,14 +45,22 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		return nil, base.ErrInvalidEnityOptions
 	}
 
-	enity := &Enity{
+	e := &Enity{
 		MetricsStorage:    base.NewMetricsStorage(),
 		ReadyCheckStorage: base.NewReadyCheckStorage(),
 		Enity:             baseEnity,
 		config:            config.SetDefault(),
 	}
 
-	return enity, nil
+	if err := e.buildMetrics(ctx); err != nil {
+		return nil, errors.Wrap(err, "build metrics")
+	}
+
+	if err := e.buildReadyHandlers(ctx); err != nil {
+		return nil, errors.Wrap(err, "build ready handlers")
+	}
+
+	return e, nil
 }
 
 func (e *Enity) GetSubscription() *monitor.Subscription {
@@ -125,13 +133,6 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	}
 
 	e.conn = opcUAConn
-	if err := e.buildMetrics(ctx); err != nil {
-		return errors.Wrap(err, "build metrics")
-	}
-
-	if err := e.buildReadyHandlers(ctx); err != nil {
-		return errors.Wrap(err, "build ready handlers")
-	}
 
 	logger.Info().Msg("opc ua connection established")
 
