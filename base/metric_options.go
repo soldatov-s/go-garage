@@ -71,6 +71,7 @@ func NewMetricOptionsGauge(fullName, postfix, help string, f GaugeFunc) *MetricO
 func buildName(fullName, postfix string) string {
 	name := fullName + preparePotfix(postfix)
 	name = strings.ReplaceAll(name, "-", "_")
+	name = strings.ReplaceAll(name, ".", "_")
 	return name
 }
 
