@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/version"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/log"
@@ -83,7 +84,7 @@ type Meta struct {
 func NewMeta(deps *MetaDeps) *Meta {
 	meta := &Meta{
 		Name:        deps.Name,
-		Builded:     deps.Name,
+		Builded:     deps.Builded,
 		Hash:        deps.Hash,
 		Version:     deps.Version,
 		Description: deps.Description,
@@ -289,6 +290,10 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 	if !ok {
 		return ErrFailedTypeCastHTTPServer
 	}
+
+	version.Branch = a.meta.Name
+	version.BuildDate = a.meta.Builded
+	version.Version = a.meta.Hash
 
 	// Registrate metrics
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
