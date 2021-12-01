@@ -78,7 +78,7 @@ func (p *PredefinedFields) GetPredefinedFields() []string {
 }
 
 type ORMDeps struct {
-	Conn             *sqlx.DB
+	Conn             **sqlx.DB
 	Target           string
 	Data             interface{}
 	PredefinedFields *PredefinedFields
@@ -86,7 +86,7 @@ type ORMDeps struct {
 
 type ORM struct {
 	requestParams    []string
-	conn             *sqlx.DB
+	conn             **sqlx.DB
 	target           string
 	stmtCache        *sqlx.NamedStmt
 	predefinedFields *PredefinedFields
@@ -157,8 +157,9 @@ func requestParams(res *[]string, data interface{}) {
 
 // SelectByID select data from target by id
 func (h *ORM) SelectByID(ctx context.Context, id int64, dest interface{}) error {
-	sqlRequest := h.conn.Rebind(stringsx.JoinStrings(" ", "SELECT * FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
-	if err := h.conn.GetContext(ctx, dest, sqlRequest, id); err != nil {
+	conn := *h.conn
+	sqlRequest := conn.Rebind(stringsx.JoinStrings(" ", "SELECT * FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
+	if err := conn.GetContext(ctx, dest, sqlRequest, id); err != nil {
 		return errors.Wrap(err, "get data")
 	}
 
@@ -167,8 +168,9 @@ func (h *ORM) SelectByID(ctx context.Context, id int64, dest interface{}) error 
 
 // HardDeleteByID hard deletes data from target by id
 func (h *ORM) HardDeleteByID(ctx context.Context, id int64) error {
-	sqlRequest := h.conn.Rebind(stringsx.JoinStrings(" ", "DELETE FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
-	if _, err := h.conn.ExecContext(ctx, sqlRequest, id); err != nil {
+	conn := *h.conn
+	sqlRequest := conn.Rebind(stringsx.JoinStrings(" ", "DELETE FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
+	if _, err := conn.ExecContext(ctx, sqlRequest, id); err != nil {
 		return errors.Wrap(err, "hard delete data")
 	}
 
@@ -179,12 +181,13 @@ func (h *ORM) HardDeleteByID(ctx context.Context, id int64) error {
 // It marks data as deleted by changing deleted_at field
 func (h *ORM) SoftDeleteByID(ctx context.Context, id int64) error {
 	now := time.Now().UTC()
-	sqlRequest := h.conn.Rebind(
+	conn := *h.conn
+	sqlRequest := conn.Rebind(
 		stringsx.JoinStrings(" ", "UPDATE", h.target, "SET",
 			h.predefinedFields.UpdatedAtField+"=$1",
 			h.predefinedFields.DeletedAtField+"=$2",
 			"WHERE "+h.predefinedFields.IDFieldName+"=$3"))
-	if _, err := h.conn.ExecContext(ctx, sqlRequest, now, now, id); err != nil {
+	if _, err := conn.ExecContext(ctx, sqlRequest, now, now, id); err != nil {
 		return errors.Wrap(err, "soft delete data")
 	}
 
@@ -197,11 +200,12 @@ func (h *ORM) getCachedStmt(ctx context.Context) (*sqlx.NamedStmt, error) {
 	}
 
 	var err error
-	sqlRequest := h.conn.Rebind(
+	conn := *h.conn
+	sqlRequest := conn.Rebind(
 		stringsx.JoinStrings(" ", "INSERT INTO", h.target, "("+strings.Join(h.requestParams, ", ")+")",
 			"VALUES", "("+":"+strings.Join(h.requestParams, ", :")+") RETURNING *"))
 
-	h.stmtCache, err = h.conn.PrepareNamedContext(ctx, sqlRequest)
+	h.stmtCache, err = conn.PrepareNamedContext(ctx, sqlRequest)
 	if err != nil {
 		return nil, errors.Wrap(err, "prepeare named")
 	}
@@ -233,12 +237,13 @@ func (h *ORM) Close() error {
 // Update data in target by id
 // ID taken from passed data
 func (h *ORM) Update(ctx context.Context, target string, data interface{}) (interface{}, error) {
+	conn := *h.conn
 	query := h.BuildQuery()
 
-	sqlRequest := h.conn.Rebind(
+	sqlRequest := conn.Rebind(
 		stringsx.JoinStrings(" ", "UPDATE "+target+" SET ", strings.Join(query, ", "),
 			"WHERE "+h.predefinedFields.IDFieldName+"=:"+h.predefinedFields.IDFieldName))
-	if _, err := h.conn.NamedExecContext(ctx, sqlRequest, data); err != nil {
+	if _, err := conn.NamedExecContext(ctx, sqlRequest, data); err != nil {
 		return nil, errors.Wrap(err, "update data")
 	}
 
