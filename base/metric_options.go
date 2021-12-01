@@ -45,7 +45,7 @@ func NewMetricOptions(name string, metric MetricGateway, f MetricFunc) *MetricOp
 type GaugeFunc func(ctx context.Context) (float64, error)
 
 func NewMetricOptionsGauge(fullName, postfix, help string, f GaugeFunc) *MetricOptions {
-	name := fullName + preparePotfix(postfix)
+	name := buildName(fullName, postfix)
 	gauge := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: name,
@@ -68,8 +68,14 @@ func NewMetricOptionsGauge(fullName, postfix, help string, f GaugeFunc) *MetricO
 	return NewMetricOptions(name, gauge, metricFunc)
 }
 
-func NewIncCounter(fullName, postfix, help string) *MetricOptions {
+func buildName(fullName, postfix string) string {
 	name := fullName + preparePotfix(postfix)
+	name = strings.ReplaceAll(name, "-", "_")
+	return name
+}
+
+func NewIncCounter(fullName, postfix, help string) *MetricOptions {
+	name := buildName(fullName, postfix)
 	counter := prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: name,
@@ -90,7 +96,7 @@ func NewIncCounter(fullName, postfix, help string) *MetricOptions {
 }
 
 func NewHistogramVec(fullName, postfix, help string, args []string) *MetricOptions {
-	name := fullName + preparePotfix(postfix)
+	name := buildName(fullName, postfix)
 	histogram := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Subsystem: fullName,
@@ -104,7 +110,7 @@ func NewHistogramVec(fullName, postfix, help string, args []string) *MetricOptio
 }
 
 func NewCounterVec(fullName, postfix, help string, args []string) *MetricOptions {
-	name := fullName + preparePotfix(postfix)
+	name := buildName(fullName, postfix)
 	counter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Subsystem: fullName,
