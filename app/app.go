@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -291,9 +292,9 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 		return ErrFailedTypeCastHTTPServer
 	}
 
-	version.Branch = a.meta.Name
-	version.BuildDate = a.meta.Builded
-	version.Version = a.meta.Hash
+	if err := a.buildInfoAsMetric(); err != nil {
+		return errors.Wrap(err, "build info as metric")
+	}
 
 	// Registrate metrics
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
@@ -334,6 +335,20 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 		}),
 	); err != nil {
 		return errors.Wrap(err, "registrate ready endpoint")
+	}
+
+	return nil
+}
+
+func (a *Manager) buildInfoAsMetric() error {
+	version.Branch = a.meta.Version
+	version.BuildDate = a.meta.Builded
+	version.Revision = a.meta.Hash
+
+	programNamespace := strings.ReplaceAll(a.meta.Name, "-", "_")
+
+	if err := a.register.Register(version.NewCollector(programNamespace)); err != nil {
+		return errors.Wrap(err, "registrate build information")
 	}
 
 	return nil
