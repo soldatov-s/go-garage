@@ -38,4 +38,4 @@ go-garage supports:
 Databases, cache, metrics, config parsers, logger, http servers all of it is providers in go-garage.
 
 ## Example
-TODO
+[go-garage-example](https://github.com/soldatov-s/go-garage-example)
