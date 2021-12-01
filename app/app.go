@@ -302,7 +302,7 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 	}
 
 	if err := a.logger.GetMetrics().Registrate(a.register); err != nil {
-		return errors.Wrap(err, "registarte metrics")
+		return errors.Wrap(err, "registrate metrics")
 	}
 
 	if err := httpSrv.RegisterEndpoint(
