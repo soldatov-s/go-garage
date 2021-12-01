@@ -74,7 +74,7 @@ func (e *Enity) AddCache(ctx context.Context, config *rediscache.Config) (*redis
 		return nil, base.ErrConflictName
 	}
 
-	cache, err := rediscache.NewCache(ctx, e.GetFullName()+"_"+name, config, e.conn)
+	cache, err := rediscache.NewCache(ctx, e.GetFullName()+"_"+name, config, &e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
