@@ -260,27 +260,10 @@ func (a *Manager) Add(ctx context.Context, e EnityGateway) error {
 	a.enities[e.GetFullName()] = e
 	a.enitiesOrder = append(a.enitiesOrder, e.GetFullName())
 
-	if v, ok := e.(EnityMetricsGateway); ok {
-		if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
-			return ErrAppendMetrics
-		}
-	}
-
-	if v, ok := e.(EnityAliveGateway); ok {
-		if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
-			return ErrAliveHandlers
-		}
-	}
-
-	if v, ok := e.(EnityReadyGateway); ok {
-		if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
-			return ErrAliveHandlers
-		}
-	}
-
 	return nil
 }
 
+// nolint:funlen,gocyclo // long function
 func (a *Manager) startStatistic(ctx context.Context) error {
 	enity, ok := a.enities[a.statsHTTPEnityName]
 	if !ok {
@@ -297,6 +280,28 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 	}
 
 	// Registrate metrics
+	for _, k := range a.enitiesOrder {
+		e := a.enities[k]
+
+		if v, ok := e.(EnityMetricsGateway); ok {
+			if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
+				return ErrAppendMetrics
+			}
+		}
+
+		if v, ok := e.(EnityAliveGateway); ok {
+			if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
+				return ErrAliveHandlers
+			}
+		}
+
+		if v, ok := e.(EnityReadyGateway); ok {
+			if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
+				return ErrAliveHandlers
+			}
+		}
+	}
+
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
 		return errors.Wrap(err, "registarte metrics")
 	}
