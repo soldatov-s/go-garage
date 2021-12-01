@@ -5,7 +5,8 @@ import "time"
 const (
 	// Default DSN and connection parameters that will be passed to
 	// database driver.
-	defaultDSN = "amqp://guest:guest@rabbitmq:5672"
+	defaultDSN     = "amqp://guest:guest@rabbitmq:5672"
+	defaultTimeout = 10 * time.Second
 )
 
 // Config represents configuration structure for every
@@ -29,6 +30,17 @@ type Config struct {
 	Timeout time.Duration `envconfig:"optional"`
 }
 
+func defaultBackoffPolicy() []time.Duration {
+	return []time.Duration{
+		2 * time.Second,
+		5 * time.Second,
+		10 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
+		25 * time.Second,
+	}
+}
+
 // Validate checks connection options. If required field is empty - it will
 // be filled with some default value.
 func (c *Config) SetDefault() *Config {
@@ -38,15 +50,12 @@ func (c *Config) SetDefault() *Config {
 		cfgCopy.DSN = defaultDSN
 	}
 
+	if cfgCopy.Timeout == 0 {
+		cfgCopy.Timeout = defaultTimeout
+	}
+
 	if len(cfgCopy.BackoffPolicy) == 0 {
-		cfgCopy.BackoffPolicy = []time.Duration{
-			2 * time.Second,
-			5 * time.Second,
-			10 * time.Second,
-			15 * time.Second,
-			20 * time.Second,
-			25 * time.Second,
-		}
+		cfgCopy.BackoffPolicy = defaultBackoffPolicy()
 	}
 
 	return &cfgCopy
