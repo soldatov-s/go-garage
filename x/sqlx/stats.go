@@ -20,7 +20,6 @@ type DBStatGateway interface {
 
 // nolint:funlen // long function
 func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
-	dbStats := e.GetConn().Stats()
 	fullName := e.GetFullName()
 
 	metrics := base.NewMapMetricsOptions()
@@ -29,7 +28,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"open connection",
 		"open connection right now",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.OpenConnections), nil
+			return float64(e.GetConn().Stats().OpenConnections), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -39,7 +38,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"max open connection",
 		"max open connection",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.MaxOpenConnections), nil
+			return float64(e.GetConn().Stats().MaxOpenConnections), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -49,7 +48,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"in use",
 		"connection in use right now",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.InUse), nil
+			return float64(e.GetConn().Stats().InUse), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -59,7 +58,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"wait duration",
 		"wait duration",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.WaitDuration), nil
+			return float64(e.GetConn().Stats().WaitDuration), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -69,7 +68,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"max idle closed",
 		"max idle closed",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.MaxIdleClosed), nil
+			return float64(e.GetConn().Stats().MaxIdleClosed), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -79,7 +78,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"max life time closed",
 		"max life time closed",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.MaxLifetimeClosed), nil
+			return float64(e.GetConn().Stats().MaxLifetimeClosed), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
@@ -89,7 +88,7 @@ func StatsAsMetrics(e EnityGateway) (*base.MapMetricsOptions, error) {
 		"idle",
 		"idle",
 		func(ctx context.Context) (float64, error) {
-			return float64(dbStats.Idle), nil
+			return float64(e.GetConn().Stats().Idle), nil
 		},
 	); err != nil {
 		return nil, errors.Wrap(err, "add gauge metric")
