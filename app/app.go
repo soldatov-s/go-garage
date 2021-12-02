@@ -302,10 +302,6 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 		}
 	}
 
-	if err := a.MetricsStorage.GetMetrics().Append(a.logger.GetMetrics()); err != nil {
-		return errors.Wrap(ErrAppendMetrics, "append logger")
-	}
-
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
 		return errors.Wrap(err, "registarte metrics")
 	}
