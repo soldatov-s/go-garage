@@ -30,7 +30,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, name string, config *Config, conn **rabbitmqcon.Connection) (*Publisher, error) {
+func NewPublisher(ctx context.Context, config *Config, conn **rabbitmqcon.Connection) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -39,7 +39,7 @@ func NewPublisher(ctx context.Context, name string, config *Config, conn **rabbi
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config,
 		conn:           conn,
-		name:           name,
+		name:           stringsx.JoinStrings("_", config.ExchangeName, config.RoutingKey),
 	}
 	if err := enity.buildMetrics(ctx); err != nil {
 		return nil, errors.Wrap(err, "build metrics")
@@ -135,7 +135,7 @@ func buildMessage(body []byte) *amqp.Publishing {
 }
 
 func (p *Publisher) buildMetrics(_ context.Context) error {
-	fullName := stringsx.JoinStrings("_", p.name, p.config.ExchangeName, p.config.RoutingKey)
+	fullName := p.name
 
 	helpOKMessages := "ok send messages to exchange"
 	okMessages, err := p.MetricsStorage.GetMetrics().AddIncCounter(fullName, "ok send messages", helpOKMessages)

@@ -76,7 +76,7 @@ func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config) 
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	consumer, err := rabbitmqconsum.NewConsumer(ctx, e.GetFullName(), config, &e.conn)
+	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, &e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -95,7 +95,7 @@ func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config) (*
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	publisher, err := rabbitmqpub.NewPublisher(ctx, e.GetFullName()+"_"+name, config, &e.conn)
+	publisher, err := rabbitmqpub.NewPublisher(ctx, config, &e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}

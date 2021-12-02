@@ -20,7 +20,7 @@ type Consumer struct {
 	name   string
 }
 
-func NewConsumer(ctx context.Context, name string, config *Config, conn **rabbitmqcon.Connection) (*Consumer, error) {
+func NewConsumer(ctx context.Context, config *Config, conn **rabbitmqcon.Connection) (*Consumer, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -28,7 +28,7 @@ func NewConsumer(ctx context.Context, name string, config *Config, conn **rabbit
 	c := &Consumer{
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config,
-		name:           name,
+		name:           config.ExchangeName,
 		conn:           conn,
 	}
 
