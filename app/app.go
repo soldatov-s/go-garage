@@ -180,7 +180,7 @@ func (e ErrSignal) Error() string {
 }
 
 func (a *Manager) OSSignalWaiter(ctx context.Context) error {
-	logger := a.logger.Zerolog()
+	logger := zerolog.Ctx(ctx)
 	closeSignal := make(chan os.Signal, 1)
 	signal.Notify(closeSignal, a.signals...)
 
@@ -202,7 +202,7 @@ func (a *Manager) OSSignalWaiter(ctx context.Context) error {
 
 // Loop is application loop
 func (a *Manager) Loop(ctx context.Context) error {
-	logger := a.logger.Zerolog()
+	logger := zerolog.Ctx(ctx)
 	if err := a.errorGroup.Wait(); err != nil {
 		switch {
 		case isExitSignal(err):
@@ -285,21 +285,25 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 
 		if v, ok := e.(EnityMetricsGateway); ok {
 			if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
-				return ErrAppendMetrics
+				return errors.Wrapf(ErrAppendMetrics, "append %s", k)
 			}
 		}
 
 		if v, ok := e.(EnityAliveGateway); ok {
 			if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
-				return ErrAliveHandlers
+				return errors.Wrapf(ErrAliveHandlers, "append %s", k)
 			}
 		}
 
 		if v, ok := e.(EnityReadyGateway); ok {
 			if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
-				return ErrAliveHandlers
+				return errors.Wrapf(ErrAliveHandlers, "append %s", k)
 			}
 		}
+	}
+
+	if err := a.MetricsStorage.GetMetrics().Append(a.logger.GetMetrics()); err != nil {
+		return errors.Wrap(ErrAppendMetrics, "append logger")
 	}
 
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
