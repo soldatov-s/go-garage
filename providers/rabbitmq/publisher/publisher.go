@@ -89,6 +89,9 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 	// We try to send message twice. Between attempts we try to reconnect.
 	if err := p.sendMessage(ctx, ampqMsg); err != nil {
 		if errRetryPub := p.sendMessage(ctx, ampqMsg); err != nil {
+			if errBadMsg := p.badMessages(ctx); errBadMsg != nil {
+				return errors.Wrap(errBadMsg, "count bad messages")
+			}
 			return errors.Wrap(errRetryPub, "retry publish a message")
 		}
 	}
@@ -119,9 +122,6 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		p.muConn.Lock()
 		p.isConnected = false
 		p.muConn.Unlock()
-		if errBadMsg := p.badMessages(ctx); errBadMsg != nil {
-			return errors.Wrap(errBadMsg, "count bad messages")
-		}
 		return errors.Wrap(err, "publish a message")
 	}
 	return nil
