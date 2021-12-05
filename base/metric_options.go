@@ -83,17 +83,7 @@ func NewIncCounter(fullName, postfix, help string) *MetricOptions {
 			Help: stringsx.JoinStrings(" ", fullName, help),
 		})
 
-	metricFunc := func(ctx context.Context, m MetricGateway) error {
-		c, ok := m.(prometheus.Counter)
-		if !ok {
-			return ErrFailedTypecastMetric
-		}
-		c.Inc()
-
-		return nil
-	}
-
-	return NewMetricOptions(name, counter, metricFunc)
+	return NewMetricOptions(name, counter, nil)
 }
 
 func NewHistogramVec(fullName, postfix, help string, args []string) *MetricOptions {
