@@ -248,22 +248,40 @@ func (a *Manager) Shutdown(ctx context.Context) error {
 
 func (a *Manager) Add(ctx context.Context, e EnityGateway) error {
 	logger := zerolog.Ctx(ctx)
+	name := e.GetFullName()
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if _, ok := a.enities[e.GetFullName()]; ok {
+	if _, ok := a.enities[name]; ok {
 		return base.ErrConflictName
 	}
 
-	logger.Debug().Msgf("add %q", e.GetFullName())
+	logger.Debug().Msgf("add %q", name)
 
-	a.enities[e.GetFullName()] = e
-	a.enitiesOrder = append(a.enitiesOrder, e.GetFullName())
+	a.enities[name] = e
+	a.enitiesOrder = append(a.enitiesOrder, name)
+
+	if v, ok := e.(EnityMetricsGateway); ok {
+		if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
+			return errors.Wrapf(ErrAppendMetrics, "append %s", name)
+		}
+	}
+
+	if v, ok := e.(EnityAliveGateway); ok {
+		if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
+			return errors.Wrapf(ErrAliveHandlers, "append %s", name)
+		}
+	}
+
+	if v, ok := e.(EnityReadyGateway); ok {
+		if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
+			return errors.Wrapf(ErrReadyHandlers, "append %s", name)
+		}
+	}
 
 	return nil
 }
 
-// nolint:funlen,gocyclo // long function
 func (a *Manager) startStatistic(ctx context.Context) error {
 	enity, ok := a.enities[a.statsHTTPEnityName]
 	if !ok {
@@ -280,28 +298,6 @@ func (a *Manager) startStatistic(ctx context.Context) error {
 	}
 
 	// Registrate metrics
-	for _, k := range a.enitiesOrder {
-		e := a.enities[k]
-
-		if v, ok := e.(EnityMetricsGateway); ok {
-			if err := a.MetricsStorage.GetMetrics().Append(v.GetMetrics()); err != nil {
-				return errors.Wrapf(ErrAppendMetrics, "append %s", k)
-			}
-		}
-
-		if v, ok := e.(EnityAliveGateway); ok {
-			if err := a.AliveCheckStorage.GetAliveHandlers().Append(v.GetAliveHandlers()); err != nil {
-				return errors.Wrapf(ErrAliveHandlers, "append %s", k)
-			}
-		}
-
-		if v, ok := e.(EnityReadyGateway); ok {
-			if err := a.ReadyCheckStorage.GetReadyHandlers().Append(v.GetReadyHandlers()); err != nil {
-				return errors.Wrapf(ErrAliveHandlers, "append %s", k)
-			}
-		}
-	}
-
 	if err := a.MetricsStorage.GetMetrics().Registrate(a.register); err != nil {
 		return errors.Wrap(err, "registarte metrics")
 	}
