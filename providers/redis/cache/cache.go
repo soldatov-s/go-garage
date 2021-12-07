@@ -172,7 +172,7 @@ func (c *Cache) Clear(ctx context.Context) error {
 		var err error
 		keys, cursor, err = conn.Scan(ctx, cursor, c.keyPrefix()+"*", 10).Result()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "scan")
 		}
 
 		if len(keys) == 0 {
@@ -182,12 +182,12 @@ func (c *Cache) Clear(ctx context.Context) error {
 		pipe := conn.Pipeline()
 		err = pipe.Del(ctx, keys...).Err()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "del")
 		}
 
 		_, err = pipe.Exec(conn.Context())
 		if err != nil {
-			return err
+			return errors.Wrap(err, "exec")
 		}
 		if cursor == 0 {
 			break

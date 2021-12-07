@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+
+	"github.com/pkg/errors"
 )
 
 // NullString is a wrapper around sql.NullString
@@ -25,7 +27,7 @@ func (x *NullString) MarshalJSON() ([]byte, error) {
 // whenever it is of type NullString
 func (x *NullString) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &x.String); err != nil {
-		return err
+		return errors.Wrap(err, "unmarshal")
 	}
 
 	x.Valid = true

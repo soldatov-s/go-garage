@@ -292,7 +292,7 @@ func (e *Enity) buildMetrics(_ context.Context) error {
 			responseSize := float64(c.Response().Size)
 			resSz.WithLabelValues(statusStr, c.Request().Method, url).Observe(responseSize)
 
-			return err
+			return errors.Wrap(err, "handle request")
 		}
 	}
 

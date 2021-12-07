@@ -3,7 +3,8 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
+
+	"github.com/pkg/errors"
 )
 
 var ErrTypeAssertion = errors.New("type assertion to []byte failed")
@@ -78,7 +79,7 @@ func (x *NullMeta) MarshalJSON() ([]byte, error) {
 // whenever it is of type NullMeta
 func (x *NullMeta) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &x.Map); err != nil {
-		return err
+		return errors.Wrap(err, "unmarshal")
 	}
 
 	x.Valid = true

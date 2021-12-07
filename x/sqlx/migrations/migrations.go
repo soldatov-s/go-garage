@@ -202,7 +202,11 @@ func (m *Migrator) migrate(ctx context.Context, currentDBVersion int64) error {
 			Msg("unsupported set of migration parameters, cannot continue")
 	}
 
-	return err
+	if err != nil {
+		return errors.Wrap(err, "goose migration")
+	}
+
+	return nil
 }
 
 func (m *Migrator) migrateSchema(ctx context.Context) error {
@@ -210,7 +214,9 @@ func (m *Migrator) migrateSchema(ctx context.Context) error {
 		return nil
 	}
 
-	_, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+m.config.Schema)
+	if _, err := m.db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+m.config.Schema); err != nil {
+		return errors.Wrap(err, "exec")
+	}
 
-	return err
+	return nil
 }

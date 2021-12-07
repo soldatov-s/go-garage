@@ -1,3 +1,4 @@
+// nolint:dupl // may be duplications in tests
 package app_test
 
 import (
@@ -5,6 +6,7 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
+	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/app"
 	"github.com/soldatov-s/go-garage/base"
 	"github.com/soldatov-s/go-garage/log"
@@ -27,7 +29,7 @@ func TestAdd(t *testing.T) {
 				enity.EXPECT().GetFullName().Return("testEnity").AnyTimes()
 
 				if err := manager.Add(ctx, enity); err != nil {
-					return err
+					return errors.Wrap(err, "add enity")
 				}
 
 				return nil
@@ -42,14 +44,14 @@ func TestAdd(t *testing.T) {
 				enity1.EXPECT().GetFullName().Return("testEnity").AnyTimes()
 
 				if err := manager.Add(ctx, enity1); err != nil {
-					return err
+					return errors.Wrap(err, "add enity")
 				}
 
 				enity2 := NewMockEnityGateway(ctrl)
 				enity2.EXPECT().GetFullName().Return("testEnity").AnyTimes()
 
 				if err := manager.Add(ctx, enity2); err != nil {
-					return err
+					return errors.Wrap(err, "add enity")
 				}
 
 				return nil
@@ -63,14 +65,14 @@ func TestAdd(t *testing.T) {
 				enity1 := NewMockEnityGateway(ctrl)
 				enity1.EXPECT().GetFullName().Return("testEnity1").AnyTimes()
 				if err := manager.Add(ctx, enity1); err != nil {
-					return err
+					return errors.Wrap(err, "add enity")
 				}
 
 				enity2 := NewMockEnityGateway(ctrl)
 				enity2.EXPECT().GetFullName().Return("testEnity2").AnyTimes()
 
 				if err := manager.Add(ctx, enity2); err != nil {
-					return err
+					return errors.Wrap(err, "add enity")
 				}
 
 				return nil

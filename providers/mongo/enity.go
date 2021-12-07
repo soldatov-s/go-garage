@@ -225,7 +225,7 @@ func (e *Enity) newBucket() (*gridfs.Bucket, error) {
 
 	bucket, err := gridfs.NewBucket(e.conn.Database(e.dbName))
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "new bucket")
 	}
 
 	e.bucket = bucket
@@ -273,12 +273,12 @@ func (e *Enity) WriteMultipart(ctx context.Context, fileprefix string, multipart
 		for _, fileHeader := range fileHeaders {
 			file, err := fileHeader.Open()
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "open")
 			}
 
 			bucket, err := e.newBucket()
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "new bucket")
 			}
 
 			// this is the name of the file which will be saved in the database
@@ -289,12 +289,12 @@ func (e *Enity) WriteMultipart(ctx context.Context, fileprefix string, multipart
 
 			gridFile, err := bucket.OpenUploadStream(filename)
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "open upload stream")
 			}
 
 			fileSize, err := e.writeToGridFile(ctx, fileHeader.Filename, file, gridFile)
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "write to grid file")
 			}
 
 			e.GetLogger(ctx).Debug().Msgf("write file to DB was successful; file size: %d \n", fileSize)
@@ -309,19 +309,19 @@ func (e *Enity) WriteMultipart(ctx context.Context, fileprefix string, multipart
 func (e *Enity) GetFile(ctx context.Context, fileID string) (*bytes.Buffer, int64, error) {
 	bucket, err := e.newBucket()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, "new bucket")
 	}
 
 	var buf bytes.Buffer
 
 	objectID, err := primitive.ObjectIDFromHex(fileID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, "objectID from hex")
 	}
 
 	dStream, err := bucket.DownloadToStream(objectID, &buf)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, "download to stream")
 	}
 
 	e.GetLogger(ctx).Debug().Msgf("file size to download: %v\n", dStream)
@@ -331,7 +331,7 @@ func (e *Enity) GetFile(ctx context.Context, fileID string) (*bytes.Buffer, int6
 func (e *Enity) GetFileByName(ctx context.Context, fileName, fileprefix string) (*bytes.Buffer, int64, error) {
 	bucket, err := e.newBucket()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, "new bucket")
 	}
 
 	var buf bytes.Buffer
@@ -343,7 +343,7 @@ func (e *Enity) GetFileByName(ctx context.Context, fileName, fileprefix string) 
 
 	dStream, err := bucket.DownloadToStreamByName(filename, &buf)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, errors.Wrap(err, "download to stream by name")
 	}
 
 	e.GetLogger(ctx).Debug().Msgf("file size to download: %v\n", dStream)
@@ -353,57 +353,64 @@ func (e *Enity) GetFileByName(ctx context.Context, fileName, fileprefix string) 
 func (e *Enity) DeleteFile(fileID string) error {
 	bucket, err := e.newBucket()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new bucket")
 	}
 
 	objectID, err := primitive.ObjectIDFromHex(fileID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "objectID from hex")
 	}
 
-	return bucket.Delete(objectID)
+	if err := bucket.Delete(objectID); err != nil {
+		return errors.Wrap(err, "delete")
+	}
+
+	return nil
 }
 
 func (e *Enity) RenameFile(fileID, newFilename string) error {
 	bucket, err := e.newBucket()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new bucket")
 	}
 
 	objectID, err := primitive.ObjectIDFromHex(fileID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "objectID from hex")
 	}
 
-	return bucket.Rename(objectID, newFilename)
+	if err := bucket.Rename(objectID, newFilename); err != nil {
+		return errors.Wrap(err, "rename")
+	}
+
+	return nil
 }
 
 func (e *Enity) UpdateFile(ctx context.Context, fileID, fileprefix string, multipartForm *multipart.Form) error {
 	bucket, err := e.newBucket()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new bucket")
 	}
 
 	objectID, err := primitive.ObjectIDFromHex(fileID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "objectID from hex")
 	}
 
-	err = bucket.Delete(objectID)
-	if err != nil {
-		return err
+	if err = bucket.Delete(objectID); err != nil {
+		return errors.Wrap(err, "delete")
 	}
 
 	for _, fileHeaders := range multipartForm.File {
 		for _, fileHeader := range fileHeaders {
 			file, err := fileHeader.Open()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "open file")
 			}
 
 			bucket, err := e.newBucket()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "new bucket")
 			}
 
 			// this is the name of the file which will be saved in the database
@@ -414,12 +421,12 @@ func (e *Enity) UpdateFile(ctx context.Context, fileID, fileprefix string, multi
 
 			gridFile, err := bucket.OpenUploadStreamWithID(objectID, filename)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "open upload stream with ID")
 			}
 
 			fileSize, err := e.writeToGridFile(ctx, fileHeader.Filename, file, gridFile)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "write to grid file")
 			}
 
 			e.GetLogger(ctx).Debug().Msgf("write file to DB was successful; file size: %d \n", fileSize)

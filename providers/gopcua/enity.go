@@ -156,7 +156,7 @@ type Subscriber interface {
 // Subscribe to channel for receiving message
 func (e *Enity) Subscribe(ctx context.Context, errorGroup *errgroup.Group, subscriber Subscriber) error {
 	if err := e.initSubscription(ctx); err != nil {
-		return err
+		return errors.Wrap(err, "init subscription")
 	}
 
 	errorGroup.Go(func() error {
@@ -193,13 +193,13 @@ func (e *Enity) initSubscription(ctx context.Context) error {
 
 	m, err := monitor.NewNodeMonitor(e.conn)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new node monitor")
 	}
 
 	e.ch = make(chan *monitor.DataChangeMessage, e.config.QueueSize)
 	sub, err := m.ChanSubscribe(ctx, &opcua.SubscriptionParameters{Interval: e.config.Interval}, e.ch)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "chan subscribe")
 	}
 
 	e.GetLogger(ctx).Info().Msgf("created subscription with id %d", sub.SubscriptionID())

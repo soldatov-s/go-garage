@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 // NullString is a wrapper around sql.NullString
@@ -39,7 +41,7 @@ func (x *NullTime) UnmarshalJSON(data []byte) error {
 	var v time.Time
 
 	if err := json.Unmarshal(data, &v); err != nil {
-		return err
+		return errors.Wrap(err, "unmarshal")
 	}
 
 	if v.Year() == 1 {
