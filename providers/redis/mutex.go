@@ -5,8 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"github.com/soldatov-s/go-garage/providers/redis/rejson"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -15,9 +16,16 @@ const (
 	defaultExpire        = 15 * time.Second
 )
 
+type MutexConnector interface {
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+}
+
 // Mutex provides a distributed mutex across multiple instances via Redis
 type Mutex struct {
-	conn          *rejson.Client
+	conn          MutexConnector
 	lockKey       string
 	lockValue     string
 	checkInterval time.Duration
@@ -27,30 +35,48 @@ type Mutex struct {
 	mu sync.RWMutex
 }
 
-// NewMutex creates new distributed redis mutex
-func NewMutex(conn *rejson.Client, expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutexByID(conn, defaultLockID, expire, checkInterval)
+type MutexOption func(*Mutex)
+
+func WithCheckInterval(checkInterval time.Duration) MutexOption {
+	return func(c *Mutex) {
+		c.checkInterval = checkInterval
+	}
 }
 
-// NewMutexByID creates new distributed redis mutex by ID
-func NewMutexByID(conn *rejson.Client, lockKey string, expire, checkInterval time.Duration) (*Mutex, error) {
-	checkIntervalValue := checkInterval
-	if checkIntervalValue == 0 {
-		checkIntervalValue = defaultCheckInterval
+func WithExpire(expire time.Duration) MutexOption {
+	return func(c *Mutex) {
+		c.expire = expire
 	}
+}
 
-	expireValue := expire
-	if expireValue == 0 {
-		expireValue = defaultExpire
+func WithLockKey(lockKey string) MutexOption {
+	return func(c *Mutex) {
+		c.lockKey = lockKey
 	}
+}
 
-	return &Mutex{
+// NewMutex creates new distributed redis mutex
+func NewMutex(conn MutexConnector, opts ...MutexOption) (*Mutex, error) {
+	mu := &Mutex{
 		conn:          conn,
-		lockKey:       lockKey,
-		checkInterval: checkIntervalValue,
-		expire:        expireValue,
+		lockKey:       defaultLockID,
+		checkInterval: defaultCheckInterval,
+		expire:        defaultExpire,
 		locked:        false,
-	}, nil
+	}
+
+	newUUID, err := uuid.NewUUID()
+	if err != nil {
+		return nil, errors.Wrap(err, "generate lock value")
+	}
+
+	mu.lockValue = newUUID.String()
+
+	for _, opt := range opts {
+		opt(mu)
+	}
+
+	return mu, nil
 }
 
 // Lock sets Redis-lock item. It is blocking call which will wait until
@@ -74,16 +100,9 @@ func (m *Mutex) Extend(ctx context.Context, timeout time.Duration) (err error) {
 func (m *Mutex) commonLock(ctx context.Context) (err error) {
 	var result bool
 
-	newUUID, err := uuid.NewUUID()
-	if err != nil {
-		return err
-	}
-
-	m.lockValue = newUUID.String()
-
 	result, err = m.conn.SetNX(ctx, m.lockKey, m.lockValue, m.expire).Result()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "set nx lock")
 	}
 
 	if !result {
@@ -92,7 +111,7 @@ func (m *Mutex) commonLock(ctx context.Context) (err error) {
 		for {
 			result, err = m.conn.SetNX(ctx, m.lockKey, m.lockValue, m.expire).Result()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "set nx lock")
 			}
 
 			if result || !m.locked {
@@ -110,13 +129,13 @@ func (m *Mutex) commonUnlock(ctx context.Context) (err error) {
 	if m.locked {
 		cmdString, err := m.conn.Get(ctx, m.lockKey).Result()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "get lock from redis")
 		}
 
 		if m.lockValue == cmdString {
-			_, err = m.conn.Del(m.conn.Context(), m.lockKey).Result()
+			_, err = m.conn.Del(ctx, m.lockKey).Result()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "del lock from redis")
 			}
 
 			m.locked = false
@@ -130,13 +149,13 @@ func (m *Mutex) commonExtend(ctx context.Context, timeout time.Duration) (err er
 	if m.locked {
 		cmdString, err := m.conn.Get(ctx, m.lockKey).Result()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "get lock from redis")
 		}
 
 		if m.lockValue == cmdString {
 			_, err = m.conn.Expire(ctx, m.lockKey, timeout).Result()
 			if err != nil {
-				return err
+				return errors.Wrap(err, "expire lock in redis")
 			}
 
 			m.locked = false

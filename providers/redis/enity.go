@@ -228,13 +228,8 @@ func (e *Enity) Ping(ctx context.Context) error {
 }
 
 // NewMutex create new redis mutex
-func (e *Enity) NewMutex(expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutex(e.conn, expire, checkInterval)
-}
-
-// NewMutexByID create new redis mutex with selected id
-func (e *Enity) NewMutexByID(lockID string, expire, checkInterval time.Duration) (*Mutex, error) {
-	return NewMutexByID(e.conn, lockID, expire, checkInterval)
+func (e *Enity) NewMutex(opts ...MutexOption) (*Mutex, error) {
+	return NewMutex(e.conn, opts...)
 }
 
 // GetMetrics return map of the metrics from cache connection
