@@ -225,7 +225,7 @@ func (e *Enity) Ping(ctx context.Context) error {
 // createMutexConnect initialize connection for mutex
 func (e *Enity) createMutexConnect() (*sqlx.DB, error) {
 	// Connect to database.
-	conn, err := sqlx.Connect("postgres", e.config.ComposeDSN())
+	conn, err := sqlx.Connect(ProviderName, e.config.ComposeDSN())
 	if err != nil {
 		return nil, errors.Wrap(err, "connect to db")
 	}
@@ -237,23 +237,13 @@ func (e *Enity) createMutexConnect() (*sqlx.DB, error) {
 }
 
 // NewMutex create new database mutex
-func (e *Enity) NewMutex(checkInterval time.Duration) (*Mutex, error) {
+func (e *Enity) NewMutex(opts ...MutexOption) (*Mutex, error) {
 	conn, err := e.createMutexConnect()
 	if err != nil {
 		return nil, errors.Wrap(err, "create mutex conn")
 	}
 
-	return NewMutex(conn, checkInterval)
-}
-
-// NewMutexByID create new database mutex with selected id
-func (e *Enity) NewMutexByID(lockID int64, checkInterval time.Duration) (*Mutex, error) {
-	dbConn, err := e.createMutexConnect()
-	if err != nil {
-		return nil, errors.Wrap(err, "create mutex conn")
-	}
-
-	return NewMutexByID(dbConn, lockID, checkInterval)
+	return NewMutex(conn, opts...)
 }
 
 // Queue worker goroutine entry point.
