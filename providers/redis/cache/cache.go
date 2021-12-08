@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
+	"github.com/soldatov-s/go-garage/providers/redis/rejson"
 )
 
 var ErrNotFoundInCache = errors.New("not found in cache")
@@ -20,7 +21,7 @@ type Connector interface {
 	JSONSet(ctx context.Context, key, path, json string, args ...interface{}) (*redis.StatusCmd, error)
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
-	Pipeline() *redis.Pipeline
+	Pipeline() *rejson.Pipeline
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 }
 
