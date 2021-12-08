@@ -8,7 +8,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
-	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"github.com/streadway/amqp"
 )
@@ -17,11 +16,15 @@ const (
 	ProviderName = "rabbitmq"
 )
 
+type Connector interface {
+	Channel() *amqp.Channel
+}
+
 // Publisher is a RabbitPublisher
 type Publisher struct {
 	*base.MetricsStorage
 	config      *Config
-	conn        **rabbitmqcon.Connection
+	conn        Connector
 	isConnected bool
 	name        string
 	muConn      sync.Mutex
@@ -30,7 +33,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, config *Config, conn **rabbitmqcon.Connection) (*Publisher, error) {
+func NewPublisher(ctx context.Context, config *Config, conn Connector) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -55,7 +58,7 @@ func (p *Publisher) connect(_ context.Context) error {
 		return nil
 	}
 
-	conn := *p.conn
+	conn := p.conn
 	if err := conn.Channel().ExchangeDeclare(p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
@@ -111,8 +114,7 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		}
 	}
 
-	conn := *p.conn
-	if err := conn.Channel().Publish(
+	if err := p.conn.Channel().Publish(
 		p.config.ExchangeName,
 		p.config.RoutingKey,
 		false,

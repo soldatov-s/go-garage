@@ -51,6 +51,12 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		publishers:        make(map[string]*rabbitmqpub.Publisher),
 	}
 
+	var err error
+	e.conn, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
+	if err != nil {
+		return nil, errors.Wrap(err, "create connection")
+	}
+
 	if err := e.buildMetrics(ctx); err != nil {
 		return nil, errors.Wrap(err, "build metrics")
 	}
@@ -76,7 +82,7 @@ func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config) 
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, &e.conn)
+	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -95,7 +101,7 @@ func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config) (*
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	publisher, err := rabbitmqpub.NewPublisher(ctx, config, &e.conn)
+	publisher, err := rabbitmqpub.NewPublisher(ctx, config, e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -128,12 +134,6 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 		return nil
 	}
 	logger.Info().Msg("establishing connection...")
-	var err error
-
-	e.conn, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
-	if err != nil {
-		return errors.Wrap(err, "create connection")
-	}
 
 	if err := e.conn.Connect(ctx, errorGroup); err != nil {
 		return errors.Wrap(err, "connect")
