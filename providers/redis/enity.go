@@ -48,6 +48,8 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 		caches:            make(map[string]*rediscache.Cache),
 	}
 
+	e.conn = rejson.NewEmptyClient()
+
 	if err := e.buildMetrics(ctx); err != nil {
 		return nil, errors.Wrap(err, "build metrics")
 	}
@@ -74,7 +76,7 @@ func (e *Enity) AddCache(ctx context.Context, config *rediscache.Config) (*redis
 		return nil, base.ErrConflictName
 	}
 
-	cache, err := rediscache.NewCache(ctx, e.GetFullName()+"_"+name, config, &e.conn)
+	cache, err := rediscache.NewCache(ctx, e.GetFullName()+"_"+name, config, e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -163,8 +165,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 		return errors.Wrap(errPing, "connect to enity")
 	}
 
-	e.conn = rejson.ExtendClient(conn)
-
+	e.conn.SetConn(conn)
 	logger.Info().Msg("connection established")
 
 	// Connection watcher will be started in any case, but only if
