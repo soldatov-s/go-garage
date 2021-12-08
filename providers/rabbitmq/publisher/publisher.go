@@ -12,19 +12,22 @@ import (
 	"github.com/streadway/amqp"
 )
 
+//go:generate mockgen --source=./publisher.go -destination=./publisher_mocks_test.go -package=rabbitmqpub_test
+
 const (
 	ProviderName = "rabbitmq"
 )
 
-type Connector interface {
-	Channel() *amqp.Channel
+type Channeler interface {
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 
 // Publisher is a RabbitPublisher
 type Publisher struct {
 	*base.MetricsStorage
 	config      *Config
-	conn        Connector
+	ch          Channeler
 	isConnected bool
 	name        string
 	muConn      sync.Mutex
@@ -33,7 +36,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, config *Config, conn Connector) (*Publisher, error) {
+func NewPublisher(ctx context.Context, config *Config, ch Channeler) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -41,7 +44,7 @@ func NewPublisher(ctx context.Context, config *Config, conn Connector) (*Publish
 	enity := &Publisher{
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config,
-		conn:           conn,
+		ch:             ch,
 		name:           stringsx.JoinStrings("_", config.ExchangeName, config.RoutingKey),
 	}
 	if err := enity.buildMetrics(ctx); err != nil {
@@ -58,8 +61,7 @@ func (p *Publisher) connect(_ context.Context) error {
 		return nil
 	}
 
-	conn := p.conn
-	if err := conn.Channel().ExchangeDeclare(p.config.ExchangeName, "direct", true,
+	if err := p.ch.ExchangeDeclare(p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return errors.Wrap(err, "declare a exchange")
@@ -114,7 +116,7 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		}
 	}
 
-	if err := p.conn.Channel().Publish(
+	if err := p.ch.Publish(
 		p.config.ExchangeName,
 		p.config.RoutingKey,
 		false,

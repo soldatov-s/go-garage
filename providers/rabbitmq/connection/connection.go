@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Connection struct {
+type Channel struct {
 	dsn           string
 	backoffPolicy []time.Duration
 	conn          *amqp.Connection
@@ -20,8 +20,8 @@ type Connection struct {
 	isClosed      bool
 }
 
-func NewConnection(dsn string, backoffPolicy []time.Duration) (*Connection, error) {
-	conn := &Connection{
+func NewChannel(dsn string, backoffPolicy []time.Duration) (*Channel, error) {
+	conn := &Channel{
 		dsn:           dsn,
 		backoffPolicy: backoffPolicy,
 	}
@@ -29,21 +29,23 @@ func NewConnection(dsn string, backoffPolicy []time.Duration) (*Connection, erro
 	return conn, nil
 }
 
-func (c *Connection) Conn() *amqp.Connection {
+// OriConn returns original connection to rabbitmq
+func (c *Channel) OriConn() *amqp.Connection {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	return c.conn
 }
 
-func (c *Connection) Channel() *amqp.Channel {
+// OriChannel returns original channel to rabbitmq
+func (c *Channel) OriChannel() *amqp.Channel {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	return c.channel
 }
 
-func (c *Connection) Close(_ context.Context) error {
+func (c *Channel) Close(_ context.Context) error {
 	if err := c.conn.Close(); err != nil {
 		return errors.Wrap(err, "close rabbitMQ connection")
 	}
@@ -51,7 +53,7 @@ func (c *Connection) Close(_ context.Context) error {
 	return nil
 }
 
-func (c *Connection) connect(_ context.Context) error {
+func (c *Channel) connect(_ context.Context) error {
 	var err error
 	if c.conn, err = amqp.Dial(c.dsn); err != nil {
 		return errors.Wrap(err, "connect to rabbitMQ")
@@ -64,8 +66,8 @@ func (c *Connection) connect(_ context.Context) error {
 	return nil
 }
 
-// Connection watcher goroutine entrypoint.
-func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
+// Connect auto reconnect to rabbitmq when we lost connection.
+func (c *Channel) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
 	if !c.isClosed {
 		if err := c.connect(ctx); err != nil {
 			return errors.Wrap(err, "connect")
@@ -105,4 +107,43 @@ func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) er
 	})
 
 	return nil
+}
+
+func (c *Channel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (c *Channel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
+}
+
+func (c *Channel) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.channel.QueueBind(name, key, exchange, noWait, args)
+}
+
+func (c *Channel) Consume(
+	queue, consumer string,
+	autoAck, exclusive, noLocal, noWait bool,
+	args amqp.Table) (<-chan amqp.Delivery, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+}
+
+// nolint:gocritic // pass msg without pointer as in original func in amqp
+func (c *Channel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.channel.Publish(exchange, key, mandatory, immediate, msg)
 }
