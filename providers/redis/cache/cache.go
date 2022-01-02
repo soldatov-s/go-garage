@@ -11,6 +11,8 @@ import (
 	"github.com/soldatov-s/go-garage/providers/redis/rejson"
 )
 
+//go:generate mockgen --source=./cache.go -destination=./cache_mocks_test.go -package=rediscache_test
+
 var ErrNotFoundInCache = errors.New("not found in cache")
 
 type Connector interface {
