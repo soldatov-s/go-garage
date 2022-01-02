@@ -77,8 +77,12 @@ func (p *PredefinedFields) GetPredefinedFields() []string {
 	}
 }
 
+type ORMDBEnityGateway interface {
+	GetConn() *sqlx.DB
+}
+
 type ORMDeps struct {
-	Conn             **sqlx.DB
+	Conn             ORMDBEnityGateway
 	Target           string
 	Data             interface{}
 	PredefinedFields *PredefinedFields
@@ -86,7 +90,7 @@ type ORMDeps struct {
 
 type ORM struct {
 	requestParams    []string
-	conn             **sqlx.DB
+	conn             ORMDBEnityGateway
 	target           string
 	stmtCache        *sqlx.NamedStmt
 	predefinedFields *PredefinedFields
@@ -157,7 +161,7 @@ func requestParams(res *[]string, data interface{}) {
 
 // SelectByID select data from target by id
 func (h *ORM) SelectByID(ctx context.Context, id int64, dest interface{}) error {
-	conn := *h.conn
+	conn := h.conn.GetConn()
 	sqlRequest := conn.Rebind(stringsx.JoinStrings(" ", "SELECT * FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
 	if err := conn.GetContext(ctx, dest, sqlRequest, id); err != nil {
 		return errors.Wrap(err, "get data")
@@ -168,7 +172,7 @@ func (h *ORM) SelectByID(ctx context.Context, id int64, dest interface{}) error 
 
 // HardDeleteByID hard deletes data from target by id
 func (h *ORM) HardDeleteByID(ctx context.Context, id int64) error {
-	conn := *h.conn
+	conn := h.conn.GetConn()
 	sqlRequest := conn.Rebind(stringsx.JoinStrings(" ", "DELETE FROM", h.target, "WHERE "+h.predefinedFields.IDFieldName+"=$1"))
 	if _, err := conn.ExecContext(ctx, sqlRequest, id); err != nil {
 		return errors.Wrap(err, "hard delete data")
@@ -181,7 +185,7 @@ func (h *ORM) HardDeleteByID(ctx context.Context, id int64) error {
 // It marks data as deleted by changing deleted_at field
 func (h *ORM) SoftDeleteByID(ctx context.Context, id int64) error {
 	now := time.Now().UTC()
-	conn := *h.conn
+	conn := h.conn.GetConn()
 	sqlRequest := conn.Rebind(
 		stringsx.JoinStrings(" ", "UPDATE", h.target, "SET",
 			h.predefinedFields.UpdatedAtField+"=$1",
@@ -200,7 +204,7 @@ func (h *ORM) getCachedStmt(ctx context.Context) (*sqlx.NamedStmt, error) {
 	}
 
 	var err error
-	conn := *h.conn
+	conn := h.conn.GetConn()
 	sqlRequest := conn.Rebind(
 		stringsx.JoinStrings(" ", "INSERT INTO", h.target, "("+strings.Join(h.requestParams, ", ")+")",
 			"VALUES", "("+":"+strings.Join(h.requestParams, ", :")+") RETURNING *"))
@@ -237,7 +241,7 @@ func (h *ORM) Close() error {
 // Update data in target by id
 // ID taken from passed data
 func (h *ORM) Update(ctx context.Context, target string, data interface{}) (interface{}, error) {
-	conn := *h.conn
+	conn := h.conn.GetConn()
 	query := h.BuildQuery()
 
 	sqlRequest := conn.Rebind(
