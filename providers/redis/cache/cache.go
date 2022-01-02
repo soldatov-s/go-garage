@@ -53,7 +53,7 @@ func NewCache(ctx context.Context, name string, config *Config, conn Connector) 
 	return cache, nil
 }
 
-func (c *Cache) keyPrefix() string {
+func (c *Cache) KeyPrefix() string {
 	prefix := c.config.KeyPrefix
 	if c.config.GlobalKeyPrefix != "" {
 		prefix = c.config.GlobalKeyPrefix + ":" + prefix
@@ -61,15 +61,20 @@ func (c *Cache) keyPrefix() string {
 	return prefix
 }
 
-func (c *Cache) buildKey(key string) string {
-	return c.keyPrefix() + ":" + key
+func (c *Cache) BuildKey(key string) string {
+	return c.KeyPrefix() + ":" + key
 }
 
 // Get item from cache by key.
 func (c *Cache) Get(ctx context.Context, key string, value interface{}) error {
-	cmdString := c.conn.Get(ctx, c.buildKey(key))
+	cmdString := c.conn.Get(ctx, c.BuildKey(key))
 	if _, err := cmdString.Result(); err != nil {
-		return ErrNotFoundInCache
+		switch {
+		case errors.Is(err, redis.Nil):
+			return ErrNotFoundInCache
+		default:
+			return errors.Wrap(err, "get from redis")
+		}
 	}
 
 	if err := cmdString.Scan(value); err != nil {
@@ -81,7 +86,7 @@ func (c *Cache) Get(ctx context.Context, key string, value interface{}) error {
 
 // JSONGet item from cache by key.
 func (c *Cache) JSONGet(ctx context.Context, key, path string, value interface{}) error {
-	cmdString, err := c.conn.JSONGet(ctx, c.buildKey(key), path)
+	cmdString, err := c.conn.JSONGet(ctx, c.BuildKey(key), path)
 	if err != nil {
 		return errors.Wrap(err, "JSONGet")
 	}
@@ -104,7 +109,7 @@ func (c *Cache) JSONGet(ctx context.Context, key, path string, value interface{}
 
 // Set item in cache by key.
 func (c *Cache) Set(ctx context.Context, key string, value interface{}) error {
-	if _, err := c.conn.Set(ctx, c.buildKey(key), value, c.config.ClearTime).Result(); err != nil {
+	if _, err := c.conn.Set(ctx, c.BuildKey(key), value, c.config.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "set key")
 	}
 
@@ -113,7 +118,7 @@ func (c *Cache) Set(ctx context.Context, key string, value interface{}) error {
 
 // SetNX (Not eXist) item in cache by key.
 func (c *Cache) SetNX(ctx context.Context, key string, value interface{}) error {
-	if _, err := c.conn.SetNX(ctx, c.buildKey(key), value, c.config.ClearTime).Result(); err != nil {
+	if _, err := c.conn.SetNX(ctx, c.BuildKey(key), value, c.config.ClearTime).Result(); err != nil {
 		return errors.Wrap(err, "setNX key")
 	}
 
@@ -122,7 +127,7 @@ func (c *Cache) SetNX(ctx context.Context, key string, value interface{}) error 
 
 // JSONSet item in cache by key.
 func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
-	cmd, err := c.conn.JSONSet(ctx, c.buildKey(key), path, json)
+	cmd, err := c.conn.JSONSet(ctx, c.BuildKey(key), path, json)
 	if err != nil {
 		return errors.Wrap(err, "JSONSet key")
 	}
@@ -132,7 +137,7 @@ func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
 	}
 
 	if c.config.ClearTime > 0 {
-		_, err := c.conn.Expire(ctx, c.buildKey(key), c.config.ClearTime).Result()
+		_, err := c.conn.Expire(ctx, c.BuildKey(key), c.config.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -143,7 +148,7 @@ func (c *Cache) JSONSet(ctx context.Context, key, path, json string) error {
 
 // JSONSetNX item in cache by key.
 func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
-	cmd, err := c.conn.JSONSet(ctx, c.buildKey(key), path, json, "NX")
+	cmd, err := c.conn.JSONSet(ctx, c.BuildKey(key), path, json, "NX")
 	if err != nil {
 		return errors.Wrap(err, "JSONSetNX key")
 	}
@@ -153,7 +158,7 @@ func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
 	}
 
 	if c.config.ClearTime > 0 {
-		_, err := c.conn.Expire(ctx, c.buildKey(key), c.config.ClearTime).Result()
+		_, err := c.conn.Expire(ctx, c.BuildKey(key), c.config.ClearTime).Result()
 		if err != nil {
 			return errors.Wrap(err, "expire key")
 		}
@@ -164,7 +169,7 @@ func (c *Cache) JSONSetNX(ctx context.Context, key, path, json string) error {
 
 // Delete item from cache by key.
 func (c *Cache) Delete(ctx context.Context, key string) error {
-	if _, err := c.conn.Del(ctx, c.buildKey(key)).Result(); err != nil {
+	if _, err := c.conn.Del(ctx, c.BuildKey(key)).Result(); err != nil {
 		return errors.Wrap(err, "del key")
 	}
 
@@ -177,7 +182,7 @@ func (c *Cache) Clear(ctx context.Context) error {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = c.conn.Scan(ctx, cursor, c.keyPrefix()+"*", 10).Result()
+		keys, cursor, err = c.conn.Scan(ctx, cursor, c.KeyPrefix()+"*", c.config.ScanSize).Result()
 		if err != nil {
 			return errors.Wrap(err, "scan")
 		}
@@ -211,7 +216,7 @@ func (c *Cache) Size(ctx context.Context) (int, error) {
 	for {
 		var keys []string
 		var err error
-		keys, cursor, err = c.conn.Scan(ctx, cursor, c.keyPrefix()+"*", 10).Result()
+		keys, cursor, err = c.conn.Scan(ctx, cursor, c.KeyPrefix()+"*", c.config.ScanSize).Result()
 		if err != nil {
 			return -1, errors.Wrap(err, "scan keys")
 		}

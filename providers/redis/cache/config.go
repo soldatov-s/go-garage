@@ -6,6 +6,7 @@ import (
 
 const (
 	defaulKeyPrefix = "garage_"
+	defaultScanSize = 10
 )
 
 type Config struct {
@@ -13,6 +14,7 @@ type Config struct {
 	KeyPrefix string `envconfig:"optional"`
 	// ClearTime is a time of live item
 	ClearTime       time.Duration `envconfig:"optional"`
+	ScanSize        int64         `envconfig:"optional"`
 	GlobalKeyPrefix string        `envconfig:"-"`
 }
 
@@ -23,6 +25,10 @@ func (c *Config) SetDefault() *Config {
 
 	if cfgCopy.KeyPrefix == "" {
 		cfgCopy.KeyPrefix = defaulKeyPrefix
+	}
+
+	if cfgCopy.ScanSize == 0 {
+		cfgCopy.ScanSize = defaultScanSize
 	}
 
 	return &cfgCopy
