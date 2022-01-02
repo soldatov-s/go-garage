@@ -68,10 +68,6 @@ func (e *Enity) GetConn() *sqlx.DB {
 	return e.conn
 }
 
-func (e *Enity) GetPConn() **sqlx.DB {
-	return &e.conn
-}
-
 func (e *Enity) GetConfig() *Config {
 	return e.config
 }
