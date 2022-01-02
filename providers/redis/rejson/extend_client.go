@@ -96,7 +96,7 @@ func (cl *redisProcessor) JSONSet(ctx context.Context, key, path, json string, a
 func (cl *redisProcessor) JSONMGet(ctx context.Context, key string, args ...interface{}) (*redis.StringSliceCmd, error) {
 	cmd, err := jsonMGetExecute(ctx, cl, append([]interface{}{key}, args...)...)
 	if err != nil {
-		return nil, errors.Wrap(err, "jsonSetExecute")
+		return nil, errors.Wrap(err, "jsonMGetExecute")
 	}
 	return cmd, nil
 }
