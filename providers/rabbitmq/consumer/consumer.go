@@ -16,7 +16,6 @@ type Channeler interface {
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
 	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
 	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
-	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 
 // Consumer is a RabbitConsumer
