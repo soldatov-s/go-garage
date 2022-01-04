@@ -130,7 +130,7 @@ func (e *Enity) Ping(ctx context.Context) error {
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
 
-	if e.ch != nil {
+	if e.ch.OriConn() != nil {
 		return nil
 	}
 	logger.Info().Msg("establishing connection...")
