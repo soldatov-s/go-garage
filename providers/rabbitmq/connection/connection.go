@@ -16,7 +16,7 @@ type Channel struct {
 	backoffPolicy []time.Duration
 	conn          *amqp.Connection
 	channel       *amqp.Channel
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	isClosed      bool
 }
 
@@ -31,16 +31,16 @@ func NewChannel(dsn string, backoffPolicy []time.Duration) (*Channel, error) {
 
 // OriConn returns original connection to rabbitmq
 func (c *Channel) OriConn() *amqp.Connection {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.conn
 }
 
 // OriChannel returns original channel to rabbitmq
 func (c *Channel) OriChannel() *amqp.Channel {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel
 }
@@ -110,22 +110,22 @@ func (c *Channel) Connect(ctx context.Context, errorGroup *errgroup.Group) error
 }
 
 func (c *Channel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
 }
 
 func (c *Channel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
 }
 
 func (c *Channel) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel.QueueBind(name, key, exchange, noWait, args)
 }
@@ -134,16 +134,16 @@ func (c *Channel) Consume(
 	queue, consumer string,
 	autoAck, exclusive, noLocal, noWait bool,
 	args amqp.Table) (<-chan amqp.Delivery, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 }
 
 // nolint:gocritic // pass msg without pointer as in original func in amqp
 func (c *Channel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return c.channel.Publish(exchange, key, mandatory, immediate, msg)
 }
