@@ -115,22 +115,20 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 				logger.Err(err).Msg("shutdown handler")
 			}
 			return ctx.Err()
-		default:
-			for d := range msg {
-				logger.Debug().Msgf("got new event %+v", string(d.Body))
-				if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
-					logger.Err(errConsume).Msg("consume message")
-					continue
-				}
-				if err := d.Ack(true); err != nil {
-					logger.Err(err).Msg("ack")
-				}
+		case d, ok := <-msg:
+			logger.Debug().Msgf("got new event %+v", string(d.Body))
+			if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
+				logger.Err(errConsume).Msg("consume message")
 			}
-
-			errorGroup.Go(func() error {
-				return c.subscribe(ctx, errorGroup, subscriber)
-			})
-			return nil
+			if err := d.Ack(true); err != nil {
+				logger.Err(err).Msg("ack")
+			}
+			if !ok {
+				errorGroup.Go(func() error {
+					return c.subscribe(ctx, errorGroup, subscriber)
+				})
+				return nil
+			}
 		}
 	}
 }
