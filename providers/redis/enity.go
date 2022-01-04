@@ -144,7 +144,7 @@ func (e *Enity) SetPoolLimits(maxIdleConnections, maxOpenedConnections int, conn
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
 
-	if e.conn != nil {
+	if e.conn.Client != nil {
 		return nil
 	}
 	logger.Info().Msg("establishing connection ...")
