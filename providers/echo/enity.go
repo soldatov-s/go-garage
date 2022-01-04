@@ -171,7 +171,12 @@ func (e *Enity) Start(ctx context.Context, errGroup *errgroup.Group) error {
 		}
 
 		if err != nil {
-			return errors.Wrap(err, "start http server")
+			switch {
+			case errors.Is(err, http.ErrServerClosed):
+				return nil
+			default:
+				return errors.Wrap(err, "start http server")
+			}
 		}
 
 		return nil
