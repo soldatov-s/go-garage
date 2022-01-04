@@ -107,6 +107,8 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 		break
 	}
 
+	logger.Info().Msg("consumer connected")
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -116,17 +118,19 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 			}
 			return ctx.Err()
 		case d, ok := <-msg:
-			logger.Debug().Msgf("got new event %+v", string(d.Body))
-			if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
-				logger.Err(errConsume).Msg("consume message")
-			}
-			if err := d.Ack(true); err != nil {
-				logger.Err(err).Msg("ack")
-			}
-			if !ok {
+			if ok {
+				logger.Debug().Msgf("got new event %+v", string(d.Body))
+				if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
+					logger.Err(errConsume).Msg("consume message")
+				}
+				if err := d.Ack(true); err != nil {
+					logger.Err(err).Msg("ack")
+				}
+			} else {
 				errorGroup.Go(func() error {
 					return c.subscribe(ctx, errorGroup, subscriber)
 				})
+				logger.Info().Msg("try to reconnect consumer")
 				return nil
 			}
 		}
