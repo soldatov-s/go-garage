@@ -62,6 +62,8 @@ func (c *Connection) Close(_ context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.isClosed = true
+
 	for _, ch := range c.channelPool {
 		if err := ch.Close(); err != nil {
 			return errors.Wrap(err, "close rabbitMQ channel")
@@ -71,8 +73,12 @@ func (c *Connection) Close(_ context.Context) error {
 	if err := c.conn.Close(); err != nil {
 		return errors.Wrap(err, "close rabbitMQ connection")
 	}
-	c.isClosed = true
+
 	return nil
+}
+
+func (c *Connection) IsClosed() bool {
+	return c.isClosed
 }
 
 func (c *Connection) connect(_ context.Context) error {

@@ -25,7 +25,7 @@ type Enity struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	config     *Config
-	ch         *rabbitmqcon.Connection
+	conn       *rabbitmqcon.Connection
 	consumers  map[string]*rabbitmqconsum.Consumer
 	publishers map[string]*rabbitmqpub.Publisher
 }
@@ -52,7 +52,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	}
 
 	var err error
-	e.ch, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
+	e.conn, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "create connection")
 	}
@@ -69,7 +69,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 }
 
 func (e *Enity) GetConn() *rabbitmqcon.Connection {
-	return e.ch
+	return e.conn
 }
 
 func (e *Enity) GetConfig() *Config {
@@ -82,7 +82,7 @@ func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config) 
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, e.ch)
+	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -101,7 +101,7 @@ func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config) (*
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	publisher, err := rabbitmqpub.NewPublisher(ctx, config, e.ch)
+	publisher, err := rabbitmqpub.NewPublisher(ctx, config, e.conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -130,12 +130,12 @@ func (e *Enity) Ping(ctx context.Context) error {
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
 
-	if e.ch.OriConn() != nil {
+	if e.conn.OriConn() != nil {
 		return nil
 	}
 	logger.Info().Msg("establishing connection...")
 
-	if err := e.ch.Connect(ctx, errorGroup); err != nil {
+	if err := e.conn.Connect(ctx, errorGroup); err != nil {
 		return errors.Wrap(err, "connect")
 	}
 
@@ -192,16 +192,16 @@ func (e *Enity) Shutdown(ctx context.Context) error {
 }
 
 func (e *Enity) shutdown(ctx context.Context) error {
-	if e.ch == nil {
+	if e.conn == nil {
 		return nil
 	}
 	e.GetLogger(ctx).Info().Msg("closing connection...")
 
-	if err := e.ch.Close(ctx); err != nil {
+	if err := e.conn.Close(ctx); err != nil {
 		return errors.Wrap(err, "close connection")
 	}
 
-	e.ch = nil
+	e.conn = nil
 
 	return nil
 }
@@ -232,7 +232,7 @@ func (e *Enity) buildReadyHandlers(_ context.Context) error {
 	checkOptions := &base.CheckOptions{
 		Name: strings.ToUpper(e.GetFullName() + "_notfailed"),
 		CheckFunc: func(ctx context.Context) error {
-			if e.ch == nil {
+			if e.conn == nil {
 				return base.ErrNotConnected
 			}
 

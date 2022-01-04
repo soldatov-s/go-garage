@@ -64,6 +64,20 @@ func (mr *MockConnectorMockRecorder) ExchangeDeclare(name, kind, durable, autoDe
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockConnector)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
 }
 
+// IsClosed mocks base method.
+func (m *MockConnector) IsClosed() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsClosed")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsClosed indicates an expected call of IsClosed.
+func (mr *MockConnectorMockRecorder) IsClosed() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsClosed", reflect.TypeOf((*MockConnector)(nil).IsClosed))
+}
+
 // QueueBind mocks base method.
 func (m *MockConnector) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
 	m.ctrl.T.Helper()
