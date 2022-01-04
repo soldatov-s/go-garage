@@ -25,7 +25,7 @@ type Enity struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	config     *Config
-	ch         *rabbitmqcon.Channel
+	ch         *rabbitmqcon.Connection
 	consumers  map[string]*rabbitmqconsum.Consumer
 	publishers map[string]*rabbitmqpub.Publisher
 }
@@ -52,7 +52,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	}
 
 	var err error
-	e.ch, err = rabbitmqcon.NewChannel(e.config.DSN, e.config.BackoffPolicy)
+	e.ch, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "create connection")
 	}
@@ -68,7 +68,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	return e, nil
 }
 
-func (e *Enity) GetConn() *rabbitmqcon.Channel {
+func (e *Enity) GetConn() *rabbitmqcon.Connection {
 	return e.ch
 }
 

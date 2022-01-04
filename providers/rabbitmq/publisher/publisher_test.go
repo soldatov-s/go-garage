@@ -52,7 +52,7 @@ func TestPublisher_SendMessage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			ch := NewMockChanneler(ctrl)
+			ch := NewMockConnector(ctrl)
 			ch.EXPECT().ExchangeDeclare(
 				tt.config.ExchangeName,
 				"direct",

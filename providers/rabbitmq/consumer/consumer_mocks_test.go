@@ -12,31 +12,31 @@ import (
 	amqp "github.com/streadway/amqp"
 )
 
-// MockChanneler is a mock of Channeler interface.
-type MockChanneler struct {
+// MockConnector is a mock of Connector interface.
+type MockConnector struct {
 	ctrl     *gomock.Controller
-	recorder *MockChannelerMockRecorder
+	recorder *MockConnectorMockRecorder
 }
 
-// MockChannelerMockRecorder is the mock recorder for MockChanneler.
-type MockChannelerMockRecorder struct {
-	mock *MockChanneler
+// MockConnectorMockRecorder is the mock recorder for MockConnector.
+type MockConnectorMockRecorder struct {
+	mock *MockConnector
 }
 
-// NewMockChanneler creates a new mock instance.
-func NewMockChanneler(ctrl *gomock.Controller) *MockChanneler {
-	mock := &MockChanneler{ctrl: ctrl}
-	mock.recorder = &MockChannelerMockRecorder{mock}
+// NewMockConnector creates a new mock instance.
+func NewMockConnector(ctrl *gomock.Controller) *MockConnector {
+	mock := &MockConnector{ctrl: ctrl}
+	mock.recorder = &MockConnectorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockChanneler) EXPECT() *MockChannelerMockRecorder {
+func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 	return m.recorder
 }
 
 // Consume mocks base method.
-func (m *MockChanneler) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
+func (m *MockConnector) Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Consume", queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 	ret0, _ := ret[0].(<-chan amqp.Delivery)
@@ -45,13 +45,13 @@ func (m *MockChanneler) Consume(queue, consumer string, autoAck, exclusive, noLo
 }
 
 // Consume indicates an expected call of Consume.
-func (mr *MockChannelerMockRecorder) Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Consume", reflect.TypeOf((*MockChanneler)(nil).Consume), queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Consume", reflect.TypeOf((*MockConnector)(nil).Consume), queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 }
 
 // ExchangeDeclare mocks base method.
-func (m *MockChanneler) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+func (m *MockConnector) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ExchangeDeclare", name, kind, durable, autoDelete, internal, noWait, args)
 	ret0, _ := ret[0].(error)
@@ -59,13 +59,13 @@ func (m *MockChanneler) ExchangeDeclare(name, kind string, durable, autoDelete, 
 }
 
 // ExchangeDeclare indicates an expected call of ExchangeDeclare.
-func (mr *MockChannelerMockRecorder) ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockChanneler)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockConnector)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
 }
 
 // QueueBind mocks base method.
-func (m *MockChanneler) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
+func (m *MockConnector) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "QueueBind", name, key, exchange, noWait, args)
 	ret0, _ := ret[0].(error)
@@ -73,13 +73,13 @@ func (m *MockChanneler) QueueBind(name, key, exchange string, noWait bool, args 
 }
 
 // QueueBind indicates an expected call of QueueBind.
-func (mr *MockChannelerMockRecorder) QueueBind(name, key, exchange, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) QueueBind(name, key, exchange, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueBind", reflect.TypeOf((*MockChanneler)(nil).QueueBind), name, key, exchange, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueBind", reflect.TypeOf((*MockConnector)(nil).QueueBind), name, key, exchange, noWait, args)
 }
 
 // QueueDeclare mocks base method.
-func (m *MockChanneler) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+func (m *MockConnector) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "QueueDeclare", name, durable, autoDelete, exclusive, noWait, args)
 	ret0, _ := ret[0].(amqp.Queue)
@@ -88,9 +88,9 @@ func (m *MockChanneler) QueueDeclare(name string, durable, autoDelete, exclusive
 }
 
 // QueueDeclare indicates an expected call of QueueDeclare.
-func (mr *MockChannelerMockRecorder) QueueDeclare(name, durable, autoDelete, exclusive, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) QueueDeclare(name, durable, autoDelete, exclusive, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueDeclare", reflect.TypeOf((*MockChanneler)(nil).QueueDeclare), name, durable, autoDelete, exclusive, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueDeclare", reflect.TypeOf((*MockConnector)(nil).QueueDeclare), name, durable, autoDelete, exclusive, noWait, args)
 }
 
 // MockSubscriber is a mock of Subscriber interface.

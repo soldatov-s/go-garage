@@ -13,7 +13,7 @@ import (
 
 //go:generate mockgen --source=./consumer.go -destination=./consumer_mocks_test.go -package=rabbitmqconsum_test
 
-type Channeler interface {
+type Connector interface {
 	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
 	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
@@ -24,11 +24,11 @@ type Channeler interface {
 type Consumer struct {
 	*base.MetricsStorage
 	config *Config
-	ch     Channeler
+	conn   Connector
 	name   string
 }
 
-func NewConsumer(ctx context.Context, config *Config, ch Channeler) (*Consumer, error) {
+func NewConsumer(ctx context.Context, config *Config, ch Connector) (*Consumer, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -37,20 +37,20 @@ func NewConsumer(ctx context.Context, config *Config, ch Channeler) (*Consumer, 
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config,
 		name:           config.ExchangeName,
-		ch:             ch,
+		conn:           ch,
 	}
 
 	return c, nil
 }
 
 func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
-	if err := c.ch.ExchangeDeclare(c.config.ExchangeName, "direct", true,
+	if err := c.conn.ExchangeDeclare(c.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return nil, errors.Wrap(err, "declare a exchange")
 	}
 
-	if _, err := c.ch.QueueDeclare(
+	if _, err := c.conn.QueueDeclare(
 		c.config.RabbitQueue, // name
 		true,                 // durable
 		false,                // delete when unused
@@ -61,7 +61,7 @@ func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
 		return nil, errors.Wrap(err, "declare a queue")
 	}
 
-	if err := c.ch.QueueBind(
+	if err := c.conn.QueueBind(
 		c.config.RabbitQueue,  // queue name
 		c.config.RoutingKey,   // routing key
 		c.config.ExchangeName, // exchange
@@ -71,7 +71,7 @@ func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
 		return nil, errors.Wrap(err, "bind to queue")
 	}
 
-	msg, err := c.ch.Consume(
+	msg, err := c.conn.Consume(
 		c.config.RabbitQueue,   // queue
 		c.config.RabbitConsume, // consume
 		false,                  // auto-ack

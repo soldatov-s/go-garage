@@ -11,17 +11,25 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Channel struct {
-	dsn           string
-	backoffPolicy []time.Duration
-	conn          *amqp.Connection
-	channel       *amqp.Channel
-	mu            sync.RWMutex
-	isClosed      bool
+type ChannelPoolItemKey struct {
+	Queue    string
+	Consumer string
+	Exchange string
+	Key      string
 }
 
-func NewChannel(dsn string, backoffPolicy []time.Duration) (*Channel, error) {
-	conn := &Channel{
+type Connection struct {
+	dsn            string
+	backoffPolicy  []time.Duration
+	conn           *amqp.Connection
+	serviceChannel *amqp.Channel
+	mu             sync.RWMutex
+	channelPool    map[ChannelPoolItemKey]*amqp.Channel
+	isClosed       bool
+}
+
+func NewConnection(dsn string, backoffPolicy []time.Duration) (*Connection, error) {
+	conn := &Connection{
 		dsn:           dsn,
 		backoffPolicy: backoffPolicy,
 	}
@@ -30,22 +38,36 @@ func NewChannel(dsn string, backoffPolicy []time.Duration) (*Channel, error) {
 }
 
 // OriConn returns original connection to rabbitmq
-func (c *Channel) OriConn() *amqp.Connection {
+func (c *Connection) OriConn() *amqp.Connection {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return c.conn
 }
 
-// OriChannel returns original channel to rabbitmq
-func (c *Channel) OriChannel() *amqp.Channel {
+// Channel returns original channel to rabbitmq
+func (c *Connection) Channel() (*amqp.Channel, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel
+	channel, err := c.conn.Channel()
+	if err != nil {
+		return nil, errors.Wrap(err, "open a channel")
+	}
+
+	return channel, nil
 }
 
-func (c *Channel) Close(_ context.Context) error {
+func (c *Connection) Close(_ context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, ch := range c.channelPool {
+		if err := ch.Close(); err != nil {
+			return errors.Wrap(err, "close rabbitMQ channel")
+		}
+	}
+
 	if err := c.conn.Close(); err != nil {
 		return errors.Wrap(err, "close rabbitMQ connection")
 	}
@@ -53,21 +75,23 @@ func (c *Channel) Close(_ context.Context) error {
 	return nil
 }
 
-func (c *Channel) connect(_ context.Context) error {
+func (c *Connection) connect(_ context.Context) error {
 	var err error
 	if c.conn, err = amqp.Dial(c.dsn); err != nil {
 		return errors.Wrap(err, "connect to rabbitMQ")
 	}
 
-	if c.channel, err = c.conn.Channel(); err != nil {
-		return errors.Wrap(err, "open a channel")
+	if c.serviceChannel, err = c.conn.Channel(); err != nil {
+		return errors.Wrap(err, "create service rabbitMQ channel")
 	}
+
+	c.channelPool = make(map[ChannelPoolItemKey]*amqp.Channel)
 
 	return nil
 }
 
 // Connect auto reconnect to rabbitmq when we lost connection.
-func (c *Channel) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
+func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
 	if !c.isClosed {
 		if err := c.connect(ctx); err != nil {
 			return errors.Wrap(err, "connect")
@@ -84,7 +108,7 @@ func (c *Channel) Connect(ctx context.Context, errorGroup *errgroup.Group) error
 				logger.Info().Msg("connection watcher stopped")
 				return ctx.Err()
 			default:
-				reason, ok := <-c.channel.NotifyClose(make(chan *amqp.Error))
+				reason, ok := <-c.conn.NotifyClose(make(chan *amqp.Error))
 				if !ok {
 					if c.isClosed {
 						return nil
@@ -109,41 +133,71 @@ func (c *Channel) Connect(ctx context.Context, errorGroup *errgroup.Group) error
 	return nil
 }
 
-func (c *Channel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+func (c *Connection) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+	return c.serviceChannel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
 }
 
-func (c *Channel) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+func (c *Connection) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
+	return c.serviceChannel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
 }
 
-func (c *Channel) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
+func (c *Connection) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel.QueueBind(name, key, exchange, noWait, args)
+	return c.serviceChannel.QueueBind(name, key, exchange, noWait, args)
 }
 
-func (c *Channel) Consume(
+func (c *Connection) Consume(
 	queue, consumer string,
 	autoAck, exclusive, noLocal, noWait bool,
 	args amqp.Table) (<-chan amqp.Delivery, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	ch, err := c.getChannelFromPool("", "", queue, consumer)
+	if err != nil {
+		return nil, errors.Wrap(err, "get channel from pool")
+	}
+
+	return ch.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
 }
 
 // nolint:gocritic // pass msg without pointer as in original func in amqp
-func (c *Channel) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+func (c *Connection) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return c.channel.Publish(exchange, key, mandatory, immediate, msg)
+	ch, err := c.getChannelFromPool(exchange, key, "", "")
+	if err != nil {
+		return errors.Wrap(err, "get channel from pool")
+	}
+
+	return ch.Publish(exchange, key, mandatory, immediate, msg)
+}
+
+func (c *Connection) getChannelFromPool(exchange, key, queue, consumer string) (*amqp.Channel, error) {
+	var err error
+	poolKey := ChannelPoolItemKey{
+		Exchange: exchange,
+		Key:      key,
+		Queue:    queue,
+		Consumer: consumer,
+	}
+	ch, ok := c.channelPool[poolKey]
+	if !ok {
+		ch, err = c.conn.Channel()
+		if err != nil {
+			return nil, errors.Wrap(err, "create channel")
+		}
+		c.channelPool[poolKey] = ch
+	}
+
+	return ch, nil
 }

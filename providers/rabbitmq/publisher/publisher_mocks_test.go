@@ -11,31 +11,31 @@ import (
 	amqp "github.com/streadway/amqp"
 )
 
-// MockChanneler is a mock of Channeler interface.
-type MockChanneler struct {
+// MockConnector is a mock of Connector interface.
+type MockConnector struct {
 	ctrl     *gomock.Controller
-	recorder *MockChannelerMockRecorder
+	recorder *MockConnectorMockRecorder
 }
 
-// MockChannelerMockRecorder is the mock recorder for MockChanneler.
-type MockChannelerMockRecorder struct {
-	mock *MockChanneler
+// MockConnectorMockRecorder is the mock recorder for MockConnector.
+type MockConnectorMockRecorder struct {
+	mock *MockConnector
 }
 
-// NewMockChanneler creates a new mock instance.
-func NewMockChanneler(ctrl *gomock.Controller) *MockChanneler {
-	mock := &MockChanneler{ctrl: ctrl}
-	mock.recorder = &MockChannelerMockRecorder{mock}
+// NewMockConnector creates a new mock instance.
+func NewMockConnector(ctrl *gomock.Controller) *MockConnector {
+	mock := &MockConnector{ctrl: ctrl}
+	mock.recorder = &MockConnectorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockChanneler) EXPECT() *MockChannelerMockRecorder {
+func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 	return m.recorder
 }
 
 // ExchangeDeclare mocks base method.
-func (m *MockChanneler) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+func (m *MockConnector) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ExchangeDeclare", name, kind, durable, autoDelete, internal, noWait, args)
 	ret0, _ := ret[0].(error)
@@ -43,13 +43,13 @@ func (m *MockChanneler) ExchangeDeclare(name, kind string, durable, autoDelete, 
 }
 
 // ExchangeDeclare indicates an expected call of ExchangeDeclare.
-func (mr *MockChannelerMockRecorder) ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockChanneler)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockConnector)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
 }
 
 // Publish mocks base method.
-func (m *MockChanneler) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+func (m *MockConnector) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Publish", exchange, key, mandatory, immediate, msg)
 	ret0, _ := ret[0].(error)
@@ -57,7 +57,7 @@ func (m *MockChanneler) Publish(exchange, key string, mandatory, immediate bool,
 }
 
 // Publish indicates an expected call of Publish.
-func (mr *MockChannelerMockRecorder) Publish(exchange, key, mandatory, immediate, msg interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) Publish(exchange, key, mandatory, immediate, msg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockChanneler)(nil).Publish), exchange, key, mandatory, immediate, msg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockConnector)(nil).Publish), exchange, key, mandatory, immediate, msg)
 }

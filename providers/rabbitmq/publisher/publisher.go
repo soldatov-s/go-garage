@@ -18,7 +18,7 @@ const (
 	ProviderName = "rabbitmq"
 )
 
-type Channeler interface {
+type Connector interface {
 	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
@@ -27,7 +27,7 @@ type Channeler interface {
 type Publisher struct {
 	*base.MetricsStorage
 	config      *Config
-	ch          Channeler
+	conn        Connector
 	isConnected bool
 	name        string
 	muConn      sync.Mutex
@@ -36,7 +36,7 @@ type Publisher struct {
 	badMessages func(ctx context.Context) error
 }
 
-func NewPublisher(ctx context.Context, config *Config, ch Channeler) (*Publisher, error) {
+func NewPublisher(ctx context.Context, config *Config, ch Connector) (*Publisher, error) {
 	if config == nil {
 		return nil, base.ErrInvalidEnityOptions
 	}
@@ -44,7 +44,7 @@ func NewPublisher(ctx context.Context, config *Config, ch Channeler) (*Publisher
 	enity := &Publisher{
 		MetricsStorage: base.NewMetricsStorage(),
 		config:         config,
-		ch:             ch,
+		conn:           ch,
 		name:           stringsx.JoinStrings("_", config.ExchangeName, config.RoutingKey),
 	}
 	if err := enity.buildMetrics(ctx); err != nil {
@@ -61,7 +61,7 @@ func (p *Publisher) connect(_ context.Context) error {
 		return nil
 	}
 
-	if err := p.ch.ExchangeDeclare(p.config.ExchangeName, "direct", true,
+	if err := p.conn.ExchangeDeclare(p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return errors.Wrap(err, "declare a exchange")
@@ -116,7 +116,7 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		}
 	}
 
-	if err := p.ch.Publish(
+	if err := p.conn.Publish(
 		p.config.ExchangeName,
 		p.config.RoutingKey,
 		false,
