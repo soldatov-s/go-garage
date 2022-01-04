@@ -13,8 +13,6 @@ import (
 
 //go:generate mockgen --source=./consumer.go -destination=./consumer_mocks_test.go -package=rabbitmqconsum_test
 
-var ErrConnectionClosed = errors.New("connection closed")
-
 type Connector interface {
 	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
@@ -47,10 +45,6 @@ func NewConsumer(ctx context.Context, config *Config, ch Connector) (*Consumer, 
 }
 
 func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
-	if c.conn.IsClosed() {
-		return nil, ErrConnectionClosed
-	}
-
 	if err := c.conn.ExchangeDeclare(c.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
@@ -107,13 +101,8 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 
 	for {
 		if msg, err = c.connect(ctx); err != nil {
-			switch {
-			case errors.Is(err, ErrConnectionClosed):
-				return nil
-			default:
-				logger.Err(err).Msg("connect consumer to rabbitMQ")
-				time.Sleep(10 * time.Second)
-			}
+			logger.Err(err).Msg("connect consumer to rabbitMQ")
+			time.Sleep(10 * time.Second)
 			continue
 		}
 		break
@@ -139,6 +128,10 @@ func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, su
 					logger.Err(err).Msg("ack")
 				}
 			} else {
+				if c.conn.IsClosed() {
+					return nil
+				}
+
 				logger.Info().Msg("try to reconnect consumer")
 				errorGroup.Go(func() error {
 					return c.subscribe(ctx, errorGroup, subscriber)

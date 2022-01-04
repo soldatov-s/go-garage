@@ -87,6 +87,8 @@ func TestConsumer_Subscribe(t *testing.T) {
 				nil,                            // args
 			).AnyTimes().Return(msgOut, nil)
 
+			ch.EXPECT().IsClosed().AnyTimes().Return(false)
+
 			ctx := context.Background()
 			ctx = log.Logger.WithContext(ctx)
 			errorGroup, ctx := errgroup.WithContext(ctx)
