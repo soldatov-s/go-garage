@@ -175,7 +175,7 @@ type ErrSignal struct {
 	Signal os.Signal
 }
 
-func (e ErrSignal) Error() string {
+func (e *ErrSignal) Error() string {
 	return fmt.Sprintf("got error signal %s", e.Signal.String())
 }
 
@@ -191,7 +191,7 @@ func (a *Manager) OSSignalWaiter(ctx context.Context) error {
 			if err := a.Shutdown(ctx); err != nil {
 				return errors.Wrap(err, "shutdown app")
 			}
-			return ErrSignal{Signal: s}
+			return &ErrSignal{Signal: s}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -215,7 +215,7 @@ func (a *Manager) Loop(ctx context.Context) error {
 }
 
 func isExitSignal(err error) bool {
-	errSig := ErrSignal{}
+	var errSig *ErrSignal
 	is := errors.As(err, &errSig)
 	return is
 }
@@ -237,8 +237,10 @@ func (a *Manager) Start(ctx context.Context) error {
 }
 
 func (a *Manager) Shutdown(ctx context.Context) error {
+	logger := zerolog.Ctx(ctx)
 	reversedProviders := stringsx.ReverseStringSlice(a.enitiesOrder)
 	for _, k := range reversedProviders {
+		logger.Debug().Msgf("shutdown enity %q", k)
 		if err := a.enities[k].Shutdown(ctx); err != nil {
 			return errors.Wrapf(err, "shutdown enity %q", k)
 		}
