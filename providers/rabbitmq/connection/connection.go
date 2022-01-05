@@ -25,7 +25,10 @@ type Connection struct {
 	serviceChannel *amqp.Channel
 	mu             sync.RWMutex
 	channelPool    map[ChannelPoolItemKey]*amqp.Channel
+	channelPoolMu  sync.RWMutex
 	isClosed       bool
+	errorGroup     *errgroup.Group
+	chanCtx        context.Context
 }
 
 func NewConnection(dsn string, backoffPolicy []time.Duration) (*Connection, error) {
@@ -104,7 +107,10 @@ func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) er
 		}
 	}
 
-	errorGroup.Go(func() error {
+	c.errorGroup = errorGroup
+	c.chanCtx = ctx
+
+	c.errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
 		logger.Info().Msg("starting connection watcher")
 
@@ -119,7 +125,7 @@ func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) er
 					if c.isClosed {
 						return nil
 					}
-					logger.Err(reason).Msg("rabbitMQ channel unexpected closed")
+					logger.Err(reason).Msg("rabbitMQ connection unexpected closed")
 
 					c.mu.Lock()
 					for _, timeout := range c.backoffPolicy {
@@ -167,7 +173,7 @@ func (c *Connection) Consume(
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	ch, err := c.getChannelFromPool("", "", queue, consumer)
+	ch, err := c.GetChannelFromPool("", "", queue, consumer)
 	if err != nil {
 		return nil, errors.Wrap(err, "get channel from pool")
 	}
@@ -180,7 +186,7 @@ func (c *Connection) Publish(exchange, key string, mandatory, immediate bool, ms
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	ch, err := c.getChannelFromPool(exchange, key, "", "")
+	ch, err := c.GetChannelFromPool(exchange, key, "", "")
 	if err != nil {
 		return errors.Wrap(err, "get channel from pool")
 	}
@@ -188,7 +194,9 @@ func (c *Connection) Publish(exchange, key string, mandatory, immediate bool, ms
 	return ch.Publish(exchange, key, mandatory, immediate, msg)
 }
 
-func (c *Connection) getChannelFromPool(exchange, key, queue, consumer string) (*amqp.Channel, error) {
+func (c *Connection) GetChannelFromPool(exchange, key, queue, consumer string) (*amqp.Channel, error) {
+	c.channelPoolMu.Lock()
+	defer c.channelPoolMu.Unlock()
 	var err error
 	poolKey := ChannelPoolItemKey{
 		Exchange: exchange,
@@ -203,7 +211,37 @@ func (c *Connection) getChannelFromPool(exchange, key, queue, consumer string) (
 			return nil, errors.Wrap(err, "create channel")
 		}
 		c.channelPool[poolKey] = ch
+		c.chanWatcher(poolKey)
 	}
 
 	return ch, nil
+}
+
+func (c *Connection) chanWatcher(poolKey ChannelPoolItemKey) {
+	ch := c.channelPool[poolKey]
+
+	c.errorGroup.Go(func() error {
+		logger := zerolog.Ctx(c.chanCtx)
+		logger.Info().Msg("starting channel watcher")
+
+		for {
+			select {
+			case <-c.chanCtx.Done():
+				logger.Info().Msg("channel watcher stopped")
+				return c.chanCtx.Err()
+			default:
+				reason, ok := <-ch.NotifyClose(make(chan *amqp.Error))
+				if !ok {
+					if c.isClosed {
+						return nil
+					}
+					logger.Err(reason).Msg("rabbitMQ channel unexpected closed")
+					c.channelPoolMu.Lock()
+					delete(c.channelPool, poolKey)
+					c.channelPoolMu.Unlock()
+					return nil
+				}
+			}
+		}
+	})
 }
