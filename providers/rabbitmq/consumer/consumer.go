@@ -88,7 +88,7 @@ func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
 	return msg, nil
 }
 
-// Subscriber describes struct with options for subscriber
+// Subscriber describes interface with methods for subscriber
 type Subscriber interface {
 	Consume(ctx context.Context, data []byte) error
 	Shutdown(ctx context.Context) error
