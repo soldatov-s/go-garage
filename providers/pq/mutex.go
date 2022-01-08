@@ -1,6 +1,7 @@
 package pq
 
 import (
+	"context"
 	"database/sql"
 	"hash/crc32"
 	"strings"
@@ -22,8 +23,8 @@ const (
 )
 
 type MutexConnector interface {
-	Get(dest interface{}, query string, args ...interface{}) error
-	Exec(query string, args ...interface{}) (sql.Result, error)
+	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
 // Mutex provides a distributed mutex across multiple instances via PostgreSQL database
@@ -85,13 +86,23 @@ func (m *Mutex) GenerateLockID(databaseName string, additionalNames ...string) {
 // pretty much like simple mutex.
 func (m *Mutex) Lock() (err error) {
 	m.mu.Lock()
-	return m.commonLock(requestLock)
+	return m.LockContext(context.Background())
+}
+
+func (m *Mutex) LockContext(ctx context.Context) (err error) {
+	m.mu.Lock()
+	return m.commonLock(ctx, requestLock)
 }
 
 // Unlock deletes lock item for database (PostgreSQL) locking.
 func (m *Mutex) Unlock() (err error) {
 	m.mu.Unlock()
-	return m.commonUnlock(requestUnlock)
+	return m.UnlockContext(context.Background())
+}
+
+func (m *Mutex) UnlockContext(ctx context.Context) (err error) {
+	m.mu.Unlock()
+	return m.commonUnlock(ctx, requestUnlock)
 }
 
 // RWLock sets rwlock item for database (PostgreSQL) locking. It is
@@ -99,19 +110,29 @@ func (m *Mutex) Unlock() (err error) {
 // pretty much like simple mutex.
 func (m *Mutex) RWLock() error {
 	m.mu.RLock()
-	return m.commonLock(requestSharedLock)
+	return m.RWLockContext(context.Background())
+}
+
+func (m *Mutex) RWLockContext(ctx context.Context) error {
+	m.mu.RLock()
+	return m.commonLock(ctx, requestSharedLock)
 }
 
 // RWUnlock deletes rwlock item for database (PostgreSQL) locking.
 func (m *Mutex) RWUnlock() error {
 	m.mu.RUnlock()
-	return m.commonUnlock(requestSharedUnlock)
+	return m.RWUnlockContext(context.Background())
 }
 
-func (m *Mutex) commonLock(request string) error {
+func (m *Mutex) RWUnlockContext(ctx context.Context) error {
+	m.mu.RUnlock()
+	return m.commonUnlock(ctx, requestSharedUnlock)
+}
+
+func (m *Mutex) commonLock(ctx context.Context, request string) error {
 	var result bool
 
-	if err := m.conn.Get(&result, request, m.lockID); err != nil {
+	if err := m.conn.GetContext(ctx, &result, request, m.lockID); err != nil {
 		return errors.Wrap(err, "get lock")
 	}
 
@@ -119,7 +140,7 @@ func (m *Mutex) commonLock(request string) error {
 
 	if !result {
 		for {
-			if err := m.conn.Get(&result, request, m.lockID); err != nil {
+			if err := m.conn.GetContext(ctx, &result, request, m.lockID); err != nil {
 				return errors.Wrap(err, "get lock")
 			}
 
@@ -134,9 +155,9 @@ func (m *Mutex) commonLock(request string) error {
 	return nil
 }
 
-func (m *Mutex) commonUnlock(request string) error {
+func (m *Mutex) commonUnlock(ctx context.Context, request string) error {
 	if m.locked {
-		if _, err := m.conn.Exec(request, m.lockID); err != nil {
+		if _, err := m.conn.ExecContext(ctx, request, m.lockID); err != nil {
 			return errors.Wrap(err, "exec request")
 		}
 
@@ -147,13 +168,13 @@ func (m *Mutex) commonUnlock(request string) error {
 }
 
 // IsLocked returns locked or not locked mutex
-func (m *Mutex) IsLocked() bool {
+func (m *Mutex) IsLocked(ctx context.Context) bool {
 	if m.locked {
 		return true
 	}
 
 	var result int
-	if err := m.conn.Get(&result, requestIsLocked, m.lockID); err != nil {
+	if err := m.conn.GetContext(ctx, &result, requestIsLocked, m.lockID); err != nil {
 		return true
 	}
 

@@ -133,7 +133,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger.Info().Msg("establishing connection...")
 	// Connect to database.
 	var err error
-	e.conn, err = sqlx.Connect(ProviderName, e.config.ComposeDSN())
+	e.conn, err = sqlx.ConnectContext(ctx, ProviderName, e.config.ComposeDSN())
 	if err != nil {
 		return errors.Wrap(err, "connect to enity")
 	}
@@ -218,25 +218,16 @@ func (e *Enity) Ping(ctx context.Context) error {
 	return nil
 }
 
-// createMutexConnect initialize connection for mutex
-func (e *Enity) createMutexConnect() (*sqlx.DB, error) {
-	// Connect to database.
-	conn, err := sqlx.Connect(ProviderName, e.config.ComposeDSN())
-	if err != nil {
-		return nil, errors.Wrap(err, "connect to db")
-	}
-
-	// Only one connect in pool for mutex
-	conn.SetMaxOpenConns(1)
-
-	return conn, nil
-}
-
 // NewMutex create new database mutex
 func (e *Enity) NewMutex(opts ...MutexOption) (*Mutex, error) {
-	conn, err := e.createMutexConnect()
+	return e.NewMutexContext(context.Background(), opts...)
+}
+
+func (e *Enity) NewMutexContext(ctx context.Context, opts ...MutexOption) (*Mutex, error) {
+	// Connect to database.
+	conn, err := e.conn.Connx(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "create mutex conn")
+		return nil, errors.Wrap(err, "get single conn")
 	}
 
 	return NewMutex(conn, opts...)
