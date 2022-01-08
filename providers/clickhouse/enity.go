@@ -134,7 +134,7 @@ func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger.Info().Msg("establishing connection to database...")
 	// Connect to database.
 	var err error
-	e.conn, err = sqlx.Connect(ProviderName, e.config.ComposeDSN())
+	e.conn, err = sqlx.ConnectContext(ctx, ProviderName, e.config.ComposeDSN())
 	if err != nil {
 		return errors.Wrap(err, "connect to enity")
 	}
