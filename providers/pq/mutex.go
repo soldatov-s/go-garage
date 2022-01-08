@@ -2,12 +2,12 @@ package pq
 
 import (
 	"context"
-	"database/sql"
 	"hash/crc32"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
 
@@ -22,15 +22,16 @@ const (
 	requestIsLocked      = "select count(*) from pg_locks where pid = pg_backend_pid() AND objid=$1"
 )
 
-type MutexConnector interface {
-	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+type DBConnector interface {
+	Connx(ctx context.Context) (*sqlx.Conn, error)
 }
 
 // Mutex provides a distributed mutex across multiple instances via PostgreSQL database
 type Mutex struct {
 	// Connection to database
-	conn MutexConnector
+	db DBConnector
+	// Single database connection
+	conn *sqlx.Conn
 	// Mutex ID
 	lockID int64
 	// Inteval between checking mutex state
@@ -56,9 +57,9 @@ func WithLockID(lockID int64) MutexOption {
 }
 
 // NewMutex creates new distributed postgresql mutex
-func NewMutex(conn MutexConnector, opts ...MutexOption) (*Mutex, error) {
+func NewMutex(conn DBConnector, opts ...MutexOption) (*Mutex, error) {
 	mu := &Mutex{
-		conn:          conn,
+		db:            conn,
 		lockID:        defaultLockID,
 		checkInterval: defaultCheckInterval,
 		locked:        false,
@@ -130,7 +131,15 @@ func (m *Mutex) RWUnlockContext(ctx context.Context) error {
 }
 
 func (m *Mutex) commonLock(ctx context.Context, request string) error {
-	var result bool
+	var (
+		result bool
+		err    error
+	)
+
+	m.conn, err = m.db.Connx(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get single connection")
+	}
 
 	if err := m.conn.GetContext(ctx, &result, request, m.lockID); err != nil {
 		return errors.Wrap(err, "get lock")
@@ -139,16 +148,22 @@ func (m *Mutex) commonLock(ctx context.Context, request string) error {
 	m.locked = true
 
 	if !result {
+		tick := time.NewTicker(m.checkInterval)
+		defer tick.Stop()
+
 		for {
-			if err := m.conn.GetContext(ctx, &result, request, m.lockID); err != nil {
-				return errors.Wrap(err, "get lock")
-			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-tick.C:
+				if err := m.conn.GetContext(ctx, &result, request, m.lockID); err != nil {
+					return errors.Wrap(err, "get lock")
+				}
 
-			if result || !m.locked {
-				return nil
+				if result || !m.locked {
+					return nil
+				}
 			}
-
-			time.Sleep(m.checkInterval)
 		}
 	}
 
@@ -161,6 +176,10 @@ func (m *Mutex) commonUnlock(ctx context.Context, request string) error {
 			return errors.Wrap(err, "exec request")
 		}
 
+		if err := m.conn.Close(); err != nil {
+			return errors.Wrap(err, "close single connection")
+		}
+
 		m.locked = false
 	}
 
@@ -168,7 +187,11 @@ func (m *Mutex) commonUnlock(ctx context.Context, request string) error {
 }
 
 // IsLocked returns locked or not locked mutex
-func (m *Mutex) IsLocked(ctx context.Context) bool {
+func (m *Mutex) IsLocked() bool {
+	return m.IsLockedContext(context.Background())
+}
+
+func (m *Mutex) IsLockedContext(ctx context.Context) bool {
 	if m.locked {
 		return true
 	}

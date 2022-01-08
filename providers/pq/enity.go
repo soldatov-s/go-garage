@@ -224,13 +224,7 @@ func (e *Enity) NewMutex(opts ...MutexOption) (*Mutex, error) {
 }
 
 func (e *Enity) NewMutexContext(ctx context.Context, opts ...MutexOption) (*Mutex, error) {
-	// Connect to database.
-	conn, err := e.conn.Connx(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "get single conn")
-	}
-
-	return NewMutex(conn, opts...)
+	return NewMutex(e.conn, opts...)
 }
 
 // Queue worker goroutine entry point.
