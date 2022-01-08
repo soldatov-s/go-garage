@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/ClickHouse/clickhouse-go v1.4.3
 	github.com/deepmap/oapi-codegen v1.9.0
-	github.com/dgraph-io/dgo/v200 v200.0.0-20210401091508-95bfd74de60e // indirect
 	github.com/dgraph-io/dgo/v210 v210.0.0-20210825123656-d3f867fe9cc3
 	github.com/getkin/kin-openapi v0.81.0
 	github.com/go-redis/redis/v8 v8.4.8
@@ -20,8 +19,6 @@ require (
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.25.0
 	github.com/rs/zerolog v1.20.0
-	github.com/soldatov-s/go-swagger v1.2.0 // indirect
-	github.com/spf13/cobra v1.0.0 // indirect
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.7.0
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2
@@ -49,7 +46,6 @@ require (
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.9.5 // indirect
-	github.com/labstack/echo-contrib v0.11.0 // indirect
 	github.com/labstack/gommon v0.3.0 // indirect
 	github.com/mailru/easyjson v0.0.0-20190626092158-b2ccc519800e // indirect
 	github.com/mattn/go-colorable v0.1.8 // indirect
@@ -60,17 +56,13 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.1 // indirect
-	github.com/vrischmann/envconfig v1.2.0 // indirect
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c // indirect
 	github.com/xdg/stringprep v0.0.0-20180714160509-73f8eece6fdc // indirect
 	go.opentelemetry.io/otel v0.15.0 // indirect
-	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d // indirect
 	golang.org/x/sys v0.0.0-20211031064116-611d5d643895 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
-	golang.org/x/tools v0.1.1 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
