@@ -18,6 +18,8 @@ go-garage supports:
   * clickhouse (with migrations based on [pressly/goose](https://github.com/pressly/goose))
   * mongodb
   * dbgraph
+* message broker:
+  * rabbitmq with autoreconect on fail connection
 * caches:
   * redis
 * opcua:
@@ -30,8 +32,12 @@ go-garage supports:
 * http servers (with swagger):
   * router (labstack/echo)(github.com/labstack/echo)
 * logger based (rs/zerolog)[github.com/rs/zerolog] 
+* dictributed mutex:
+  * based on postgresql
+  * based on redis
+* miniorm for popular actions on the database (simple CRUD)
 * service meta informations
-* utils for strings and time
+* utils for strings (also email, phones) and time
 * null types (nullmeta, nullstring, nulltime)
 
 # How it works
