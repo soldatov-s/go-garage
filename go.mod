@@ -12,7 +12,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.1.4
 	github.com/gopcua/opcua v0.0.0-20201219213726-4f8488dd4b82
-	github.com/jmoiron/sqlx v1.2.0
+	github.com/jmoiron/sqlx v1.3.4
 	github.com/labstack/echo/v4 v4.3.0
 	github.com/lib/pq v1.7.0
 	github.com/pkg/errors v0.9.1
