@@ -220,10 +220,6 @@ func (e *Enity) Ping(ctx context.Context) error {
 
 // NewMutex create new database mutex
 func (e *Enity) NewMutex(opts ...MutexOption) (*Mutex, error) {
-	return e.NewMutexContext(context.Background(), opts...)
-}
-
-func (e *Enity) NewMutexContext(ctx context.Context, opts ...MutexOption) (*Mutex, error) {
 	return NewMutex(e.conn, opts...)
 }
 
