@@ -1,3 +1,5 @@
+// Package ucpool create on base database/sql pakage
+//
 // Copyright 2011 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -13,11 +15,10 @@
 //
 // For usage examples, see the wiki page at
 // https://golang.org/s/sqlwiki.
-package pool
+package ucpool
 
 import (
 	"context"
-	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
@@ -25,29 +26,37 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-)
 
-var (
-	driversMu sync.RWMutex
-	drivers   = make(map[string]driver.Driver)
+	"github.com/soldatov-s/go-garage/ucpool/driver"
 )
 
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
 
-// DB is a database handle representing a pool of zero or more
+// ErrBadConn should be returned by a driver to signal to the sql
+// package that a driver.Conn is in a bad state (such as the server
+// having earlier closed the connection) and the sql package should
+// retry on a new connection.
+//
+// To prevent duplicate operations, ErrBadConn should NOT be returned
+// if there's a possibility that the database server might have
+// performed the operation. Even if the server sends back an error,
+// you shouldn't return ErrBadConn.
+var ErrBadConn = errors.New("driver: bad connection")
+
+// Pool is a database handle representing a pool of zero or more
 // underlying connections. It's safe for concurrent use by multiple
 // goroutines.
 //
 // The sql package creates and frees connections automatically; it
 // also maintains a free pool of idle connections. If the database has
 // a concept of per-connection state, such state can be reliably observed
-// within a transaction (Tx) or connection (Conn). Once DB.Begin is called, the
+// within a transaction (Tx) or connection (Conn). Once Pool.Begin is called, the
 // returned Tx is bound to a single connection. Once Commit or
 // Rollback is called on the transaction, that transaction's
-// connection is returned to DB's idle connection pool. The pool size
+// connection is returned to Pool's idle connection pool. The pool size
 // can be controlled with SetMaxIdleConns.
-type DB struct {
+type Pool struct {
 	// Atomic access only. At top of struct to prevent mis-alignment
 	// on 32-bit platforms. Of type time.Duration.
 	waitDuration int64 // Total time waited for new connections.
@@ -102,15 +111,14 @@ const (
 // interfaces returned via that Conn, such as calls on Tx, Stmt,
 // Result, Rows)
 type driverConn struct {
-	db        *DB
+	db        *Pool
 	createdAt time.Time
 
 	sync.Mutex  // guards following
-	ci          driver.Conn
+	ci          io.Closer
 	needReset   bool // The connection session should be reset before use if true.
 	closed      bool
 	finalClosed bool // ci.Close has been called
-	openStmt    map[*driverStmt]bool
 
 	// guarded by db.mu
 	inUse      bool
@@ -121,12 +129,6 @@ type driverConn struct {
 
 func (dc *driverConn) releaseConn(err error) {
 	dc.db.putConn(dc, err, true)
-}
-
-func (dc *driverConn) removeOpenStmt(ds *driverStmt) {
-	dc.Lock()
-	defer dc.Unlock()
-	delete(dc.openStmt, ds)
 }
 
 func (dc *driverConn) expired(timeout time.Duration) bool {
@@ -166,37 +168,14 @@ func (dc *driverConn) validateConnection(needsReset bool) bool {
 	return true
 }
 
-// prepareLocked prepares the query on dc. When cg == nil the dc must keep track of
-// the prepared statements in a pool.
-func (dc *driverConn) prepareLocked(ctx context.Context, cg stmtConnGrabber, query string) (*driverStmt, error) {
-	si, err := ctxDriverPrepare(ctx, dc.ci, query)
-	if err != nil {
-		return nil, err
-	}
-	ds := &driverStmt{Locker: dc, si: si}
-
-	// No need to manage open statements if there is a single connection grabber.
-	if cg != nil {
-		return ds, nil
-	}
-
-	// Track each driverConn's open statements, so we can close them
-	// before closing the conn.
-	//
-	// Wrap all driver.Stmt is *driverStmt to ensure they are only closed once.
-	if dc.openStmt == nil {
-		dc.openStmt = make(map[*driverStmt]bool)
-	}
-	dc.openStmt[ds] = true
-	return ds, nil
-}
+var ErrDuplicateClose = errors.New("sql: duplicate driverConn close")
 
 // the dc.db's Mutex is held.
 func (dc *driverConn) closeDBLocked() func() error {
 	dc.Lock()
 	defer dc.Unlock()
 	if dc.closed {
-		return func() error { return errors.New("sql: duplicate driverConn close") }
+		return func() error { return ErrDuplicateClose }
 	}
 	dc.closed = true
 	return dc.db.removeDepLocked(dc, dc)
@@ -206,7 +185,7 @@ func (dc *driverConn) Close() error {
 	dc.Lock()
 	if dc.closed {
 		dc.Unlock()
-		return errors.New("sql: duplicate driverConn close")
+		return ErrDuplicateClose
 	}
 	dc.closed = true
 	dc.Unlock() // not defer; removeDep finalClose calls may need to lock
@@ -222,19 +201,6 @@ func (dc *driverConn) Close() error {
 func (dc *driverConn) finalClose() error {
 	var err error
 
-	// Each *driverStmt has a lock to the dc. Copy the list out of the dc
-	// before calling close on each stmt.
-	var openStmt []*driverStmt
-	withLock(dc, func() {
-		openStmt = make([]*driverStmt, 0, len(dc.openStmt))
-		for ds := range dc.openStmt {
-			openStmt = append(openStmt, ds)
-		}
-		dc.openStmt = nil
-	})
-	for _, ds := range openStmt {
-		ds.Close()
-	}
 	withLock(dc, func() {
 		dc.finalClosed = true
 		err = dc.ci.Close()
@@ -250,29 +216,6 @@ func (dc *driverConn) finalClose() error {
 	return err
 }
 
-// driverStmt associates a driver.Stmt with the
-// *driverConn from which it came, so the driverConn's lock can be
-// held during calls.
-type driverStmt struct {
-	sync.Locker // the *driverConn
-	si          driver.Stmt
-	closed      bool
-	closeErr    error // return value of previous Close call
-}
-
-// Close ensures driver.Stmt is only closed once and always returns the same
-// result.
-func (ds *driverStmt) Close() error {
-	ds.Lock()
-	defer ds.Unlock()
-	if ds.closed {
-		return ds.closeErr
-	}
-	ds.closed = true
-	ds.closeErr = ds.si.Close()
-	return ds.closeErr
-}
-
 // depSet is a finalCloser's outstanding dependencies
 type depSet map[interface{}]bool // set of true bools
 
@@ -284,15 +227,7 @@ type finalCloser interface {
 	finalClose() error
 }
 
-// addDep notes that x now depends on dep, and x's finalClose won't be
-// called until all of x's dependencies are removed with removeDep.
-func (db *DB) addDep(x finalCloser, dep interface{}) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	db.addDepLocked(x, dep)
-}
-
-func (db *DB) addDepLocked(x finalCloser, dep interface{}) {
+func (db *Pool) addDepLocked(x finalCloser, dep interface{}) {
 	if db.dep == nil {
 		db.dep = make(map[finalCloser]depSet)
 	}
@@ -304,19 +239,7 @@ func (db *DB) addDepLocked(x finalCloser, dep interface{}) {
 	xdep[dep] = true
 }
 
-// removeDep notes that x no longer depends on dep.
-// If x still has dependencies, nil is returned.
-// If x no longer has any dependencies, its finalClose method will be
-// called and its error value will be returned.
-func (db *DB) removeDep(x finalCloser, dep interface{}) error {
-	db.mu.Lock()
-	fn := db.removeDepLocked(x, dep)
-	db.mu.Unlock()
-	return fn()
-}
-
-func (db *DB) removeDepLocked(x finalCloser, dep interface{}) func() error {
-
+func (db *Pool) removeDepLocked(x finalCloser, dep interface{}) func() error {
 	xdep, ok := db.dep[x]
 	if !ok {
 		panic(fmt.Sprintf("unpaired removeDep: no deps for %T", x))
@@ -351,7 +274,7 @@ type dsnConnector struct {
 	driver driver.Driver
 }
 
-func (t dsnConnector) Connect(_ context.Context) (driver.Conn, error) {
+func (t dsnConnector) Connect(_ context.Context) (io.Closer, error) {
 	return t.driver.Open(t.dsn)
 }
 
@@ -375,9 +298,9 @@ func (t dsnConnector) Driver() driver.Driver {
 // and maintains its own pool of idle connections. Thus, the OpenDB
 // function should be called just once. It is rarely necessary to
 // close a DB.
-func OpenDB(c driver.Connector) *DB {
+func OpenDB(c driver.Connector) *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
-	db := &DB{
+	db := &Pool{
 		connector:    c,
 		openerCh:     make(chan struct{}, connectionRequestQueueSize),
 		lastPut:      make(map[*driverConn]string),
@@ -407,65 +330,8 @@ func OpenDB(c driver.Connector) *DB {
 // and maintains its own pool of idle connections. Thus, the Open
 // function should be called just once. It is rarely necessary to
 // close a DB.
-func Open(driverName, dataSourceName string) (*DB, error) {
-	driversMu.RLock()
-	driveri, ok := drivers[driverName]
-	driversMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("sql: unknown driver %q (forgotten import?)", driverName)
-	}
-
-	if driverCtx, ok := driveri.(driver.DriverContext); ok {
-		connector, err := driverCtx.OpenConnector(dataSourceName)
-		if err != nil {
-			return nil, err
-		}
-		return OpenDB(connector), nil
-	}
-
+func Open(dataSourceName string, driveri driver.Driver) (*Pool, error) {
 	return OpenDB(dsnConnector{dsn: dataSourceName, driver: driveri}), nil
-}
-
-func (db *DB) pingDC(ctx context.Context, dc *driverConn, release func(error)) error {
-	var err error
-	if pinger, ok := dc.ci.(driver.Pinger); ok {
-		withLock(dc, func() {
-			err = pinger.Ping(ctx)
-		})
-	}
-	release(err)
-	return err
-}
-
-// PingContext verifies a connection to the database is still alive,
-// establishing a connection if necessary.
-func (db *DB) PingContext(ctx context.Context) error {
-	var dc *driverConn
-	var err error
-
-	for i := 0; i < maxBadConnRetries; i++ {
-		dc, err = db.conn(ctx, cachedOrNewConn)
-		if err != driver.ErrBadConn {
-			break
-		}
-	}
-	if err == driver.ErrBadConn {
-		dc, err = db.conn(ctx, alwaysNewConn)
-	}
-	if err != nil {
-		return err
-	}
-
-	return db.pingDC(ctx, dc, dc.releaseConn)
-}
-
-// Ping verifies a connection to the database is still alive,
-// establishing a connection if necessary.
-//
-// Ping uses context.Background internally; to specify the context, use
-// PingContext.
-func (db *DB) Ping() error {
-	return db.PingContext(context.Background())
 }
 
 // Close closes the database and prevents new queries from starting.
@@ -474,7 +340,7 @@ func (db *DB) Ping() error {
 //
 // It is rare to Close a DB, as the DB handle is meant to be
 // long-lived and shared between many goroutines.
-func (db *DB) Close() error {
+func (db *Pool) Close() error {
 	db.mu.Lock()
 	if db.closed { // Make DB.Close idempotent
 		db.mu.Unlock()
@@ -512,11 +378,10 @@ func (db *DB) Close() error {
 
 const defaultMaxIdleConns = 2
 
-func (db *DB) maxIdleConnsLocked() int {
+func (db *Pool) maxIdleConnsLocked() int {
 	n := db.maxIdleCount
 	switch {
 	case n == 0:
-		// TODO(bradfitz): ask driver, if supported, for its default preference
 		return defaultMaxIdleConns
 	case n < 0:
 		return 0
@@ -525,7 +390,7 @@ func (db *DB) maxIdleConnsLocked() int {
 	}
 }
 
-func (db *DB) shortestIdleTimeLocked() time.Duration {
+func (db *Pool) shortestIdleTimeLocked() time.Duration {
 	if db.maxIdleTime <= 0 {
 		return db.maxLifetime
 	}
@@ -550,7 +415,7 @@ func (db *DB) shortestIdleTimeLocked() time.Duration {
 //
 // The default max idle connections is currently 2. This may change in
 // a future release.
-func (db *DB) SetMaxIdleConns(n int) {
+func (db *Pool) SetMaxIdleConns(n int) {
 	db.mu.Lock()
 	if n > 0 {
 		db.maxIdleCount = n
@@ -563,9 +428,8 @@ func (db *DB) SetMaxIdleConns(n int) {
 		db.maxIdleCount = db.maxOpen
 	}
 	var closing []*driverConn
-	idleCount := len(db.freeConn)
 	maxIdle := db.maxIdleConnsLocked()
-	if idleCount > maxIdle {
+	if len(db.freeConn) > maxIdle {
 		closing = db.freeConn[maxIdle:]
 		db.freeConn = db.freeConn[:maxIdle]
 	}
@@ -584,7 +448,7 @@ func (db *DB) SetMaxIdleConns(n int) {
 //
 // If n <= 0, then there is no limit on the number of open connections.
 // The default is 0 (unlimited).
-func (db *DB) SetMaxOpenConns(n int) {
+func (db *Pool) SetMaxOpenConns(n int) {
 	db.mu.Lock()
 	db.maxOpen = n
 	if n < 0 {
@@ -602,7 +466,7 @@ func (db *DB) SetMaxOpenConns(n int) {
 // Expired connections may be closed lazily before reuse.
 //
 // If d <= 0, connections are not closed due to a connection's age.
-func (db *DB) SetConnMaxLifetime(d time.Duration) {
+func (db *Pool) SetConnMaxLifetime(d time.Duration) {
 	if d < 0 {
 		d = 0
 	}
@@ -624,7 +488,7 @@ func (db *DB) SetConnMaxLifetime(d time.Duration) {
 // Expired connections may be closed lazily before reuse.
 //
 // If d <= 0, connections are not closed due to a connection's idle time.
-func (db *DB) SetConnMaxIdleTime(d time.Duration) {
+func (db *Pool) SetConnMaxIdleTime(d time.Duration) {
 	if d < 0 {
 		d = 0
 	}
@@ -643,14 +507,14 @@ func (db *DB) SetConnMaxIdleTime(d time.Duration) {
 }
 
 // startCleanerLocked starts connectionCleaner if needed.
-func (db *DB) startCleanerLocked() {
+func (db *Pool) startCleanerLocked() {
 	if (db.maxLifetime > 0 || db.maxIdleTime > 0) && db.numOpen > 0 && db.cleanerCh == nil {
 		db.cleanerCh = make(chan struct{}, 1)
 		go db.connectionCleaner(db.shortestIdleTimeLocked())
 	}
 }
 
-func (db *DB) connectionCleaner(d time.Duration) {
+func (db *Pool) connectionCleaner(d time.Duration) {
 	const minInterval = time.Second
 
 	if d < minInterval {
@@ -686,7 +550,7 @@ func (db *DB) connectionCleaner(d time.Duration) {
 	}
 }
 
-func (db *DB) connectionCleanerRunLocked() (closing []*driverConn) {
+func (db *Pool) connectionCleanerRunLocked() (closing []*driverConn) {
 	if db.maxLifetime > 0 {
 		expiredSince := nowFunc().Add(-db.maxLifetime)
 		for i := 0; i < len(db.freeConn); i++ {
@@ -741,7 +605,7 @@ type DBStats struct {
 }
 
 // Stats returns database statistics.
-func (db *DB) Stats() DBStats {
+func (db *Pool) Stats() DBStats {
 	wait := atomic.LoadInt64(&db.waitDuration)
 
 	db.mu.Lock()
@@ -766,7 +630,7 @@ func (db *DB) Stats() DBStats {
 // Assumes db.mu is locked.
 // If there are connRequests and the connection limit hasn't been reached,
 // then tell the connectionOpener to open new connections.
-func (db *DB) maybeOpenNewConnections() {
+func (db *Pool) maybeOpenNewConnections() {
 	numRequests := len(db.connRequests)
 	if db.maxOpen > 0 {
 		numCanOpen := db.maxOpen - db.numOpen
@@ -785,7 +649,7 @@ func (db *DB) maybeOpenNewConnections() {
 }
 
 // Runs in a separate goroutine, opens new connections when requested.
-func (db *DB) connectionOpener(ctx context.Context) {
+func (db *Pool) connectionOpener(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -797,7 +661,7 @@ func (db *DB) connectionOpener(ctx context.Context) {
 }
 
 // Open one new connection
-func (db *DB) openNewConnection(ctx context.Context) {
+func (db *Pool) openNewConnection(ctx context.Context) {
 	// maybeOpenNewConnections has already executed db.numOpen++ before it sent
 	// on db.openerCh. This function must execute db.numOpen-- if the
 	// connection fails or is closed before returning.
@@ -843,14 +707,15 @@ var errDBClosed = errors.New("sql: database is closed")
 
 // nextRequestKeyLocked returns the next connection request key.
 // It is assumed that nextRequest will not overflow.
-func (db *DB) nextRequestKeyLocked() uint64 {
+func (db *Pool) nextRequestKeyLocked() uint64 {
 	next := db.nextRequest
 	db.nextRequest++
 	return next
 }
 
 // conn returns a newly-opened or cached *driverConn.
-func (db *DB) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn, error) {
+// nolint:funlen,gocyclo,gocognit // long function
+func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn, error) {
 	db.mu.Lock()
 	if db.closed {
 		db.mu.Unlock()
@@ -876,14 +741,14 @@ func (db *DB) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn
 			db.maxLifetimeClosed++
 			db.mu.Unlock()
 			conn.Close()
-			return nil, driver.ErrBadConn
+			return nil, ErrBadConn
 		}
 		db.mu.Unlock()
 
 		// Reset the session if required.
-		if err := conn.resetSession(ctx); err == driver.ErrBadConn {
+		if err := conn.resetSession(ctx); errors.Is(err, ErrBadConn) {
 			conn.Close()
-			return nil, driver.ErrBadConn
+			return nil, ErrBadConn
 		}
 
 		return conn, nil
@@ -891,6 +756,7 @@ func (db *DB) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn
 
 	// Out of free connections or we were asked not to use one. If we're not
 	// allowed to open any more connections, make a request and wait.
+	// nolint:nestif // deeply nested
 	if db.maxOpen > 0 && db.numOpen >= db.maxOpen {
 		// Make the connRequest channel. It's buffered so that the
 		// connectionOpener doesn't block while waiting for the req to be read.
@@ -938,16 +804,16 @@ func (db *DB) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn
 				db.maxLifetimeClosed++
 				db.mu.Unlock()
 				ret.conn.Close()
-				return nil, driver.ErrBadConn
+				return nil, ErrBadConn
 			}
 			if ret.conn == nil {
 				return nil, ret.err
 			}
 
 			// Reset the session if required.
-			if err := ret.conn.resetSession(ctx); err == driver.ErrBadConn {
+			if err := ret.conn.resetSession(ctx); errors.Is(err, ErrBadConn) {
 				ret.conn.Close()
-				return nil, driver.ErrBadConn
+				return nil, ErrBadConn
 			}
 			return ret.conn, ret.err
 		}
@@ -977,27 +843,7 @@ func (db *DB) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn
 }
 
 // putConnHook is a hook for testing.
-var putConnHook func(*DB, *driverConn)
-
-// noteUnusedDriverStatement notes that ds is no longer used and should
-// be closed whenever possible (when c is next not in use), unless c is
-// already closed.
-func (db *DB) noteUnusedDriverStatement(c *driverConn, ds *driverStmt) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	if c.inUse {
-		c.onPut = append(c.onPut, func() {
-			ds.Close()
-		})
-	} else {
-		c.Lock()
-		fc := c.finalClosed
-		c.Unlock()
-		if !fc {
-			ds.Close()
-		}
-	}
-}
+var putConnHook func(*Pool, *driverConn)
 
 // debugGetPut determines whether getConn & putConn calls' stack traces
 // are returned for more verbose crashes.
@@ -1005,24 +851,26 @@ const debugGetPut = false
 
 // putConn adds a connection to the db's free pool.
 // err is optionally the last error that occurred on this connection.
-func (db *DB) putConn(dc *driverConn, err error, resetSession bool) {
-	if err != driver.ErrBadConn {
+// nolint:gocyclo // long function
+func (db *Pool) putConn(dc *driverConn, err error, resetSession bool) {
+	if !errors.Is(err, ErrBadConn) {
 		if !dc.validateConnection(resetSession) {
-			err = driver.ErrBadConn
+			err = ErrBadConn
 		}
 	}
 	db.mu.Lock()
 	if !dc.inUse {
 		db.mu.Unlock()
 		if debugGetPut {
+			// nolint:forbidigo // only for debug
 			fmt.Printf("putConn(%v) DUPLICATE was: %s\n\nPREVIOUS was: %s", dc, stack(), db.lastPut[dc])
 		}
 		panic("sql: connection returned that was never out")
 	}
 
-	if err != driver.ErrBadConn && dc.expired(db.maxLifetime) {
+	if !errors.Is(err, ErrBadConn) && dc.expired(db.maxLifetime) {
 		db.maxLifetimeClosed++
-		err = driver.ErrBadConn
+		err = ErrBadConn
 	}
 	if debugGetPut {
 		db.lastPut[dc] = stack()
@@ -1035,7 +883,7 @@ func (db *DB) putConn(dc *driverConn, err error, resetSession bool) {
 	}
 	dc.onPut = nil
 
-	if err == driver.ErrBadConn {
+	if errors.Is(err, ErrBadConn) {
 		// Don't reuse bad connections.
 		// Since the conn is considered bad and is being discarded, treat it
 		// as closed. Don't decrement the open count here, finalClose will
@@ -1066,7 +914,7 @@ func (db *DB) putConn(dc *driverConn, err error, resetSession bool) {
 // If err == nil, then dc must not equal nil.
 // If a connRequest was fulfilled or the *driverConn was placed in the
 // freeConn list, then true is returned, otherwise false is returned.
-func (db *DB) putConnDBLocked(dc *driverConn, err error) bool {
+func (db *Pool) putConnDBLocked(dc *driverConn, err error) bool {
 	if db.closed {
 		return false
 	}
@@ -1100,95 +948,40 @@ func (db *DB) putConnDBLocked(dc *driverConn, err error) bool {
 }
 
 // maxBadConnRetries is the number of maximum retries if the driver returns
-// driver.ErrBadConn to signal a broken connection before forcing a new
+// ErrBadConn to signal a broken connection before forcing a new
 // connection to be opened.
 const maxBadConnRetries = 2
-
-// PrepareContext creates a prepared statement for later queries or executions.
-// Multiple queries or executions may be run concurrently from the
-// returned statement.
-// The caller must call the statement's Close method
-// when the statement is no longer needed.
-//
-// The provided context is used for the preparation of the statement, not for the
-// execution of the statement.
-func (db *DB) PrepareContext(ctx context.Context, query string) (*Stmt, error) {
-	var stmt *Stmt
-	var err error
-	for i := 0; i < maxBadConnRetries; i++ {
-		stmt, err = db.prepare(ctx, query, cachedOrNewConn)
-		if err != driver.ErrBadConn {
-			break
-		}
-	}
-	if err == driver.ErrBadConn {
-		return db.prepare(ctx, query, alwaysNewConn)
-	}
-	return stmt, err
-}
-
-// Prepare creates a prepared statement for later queries or executions.
-// Multiple queries or executions may be run concurrently from the
-// returned statement.
-// The caller must call the statement's Close method
-// when the statement is no longer needed.
-//
-// Prepare uses context.Background internally; to specify the context, use
-// PrepareContext.
-func (db *DB) Prepare(query string) (*Stmt, error) {
-	return db.PrepareContext(context.Background(), query)
-}
-
-func (db *DB) prepare(ctx context.Context, query string, strategy connReuseStrategy) (*Stmt, error) {
-	// TODO: check if db.driver supports an optional
-	// driver.Preparer interface and call that instead, if so,
-	// otherwise we make a prepared statement that's bound
-	// to a connection, and to execute this prepared statement
-	// we either need to use this connection (if it's free), else
-	// get a new connection + re-prepare + execute on that one.
-	dc, err := db.conn(ctx, strategy)
-	if err != nil {
-		return nil, err
-	}
-	return db.prepareDC(ctx, dc, dc.releaseConn, nil, query)
-}
-
-// prepareDC prepares a query on the driverConn and calls release before
-// returning. When cg == nil it implies that a connection pool is used, and
-// when cg != nil only a single driver connection is used.
-func (db *DB) prepareDC(ctx context.Context, dc *driverConn, release func(error), cg stmtConnGrabber, query string) (*Stmt, error) {
-	var ds *driverStmt
-	var err error
-	defer func() {
-		release(err)
-	}()
-	withLock(dc, func() {
-		ds, err = dc.prepareLocked(ctx, cg, query)
-	})
-	if err != nil {
-		return nil, err
-	}
-	stmt := &Stmt{
-		db:    db,
-		query: query,
-		cg:    cg,
-		cgds:  ds,
-	}
-
-	// When cg == nil this statement will need to keep track of various
-	// connections they are prepared on and record the stmt dependency on
-	// the DB.
-	if cg == nil {
-		stmt.css = []connStmt{{dc, ds}}
-		stmt.lastNumClosed = atomic.LoadUint64(&db.numClosed)
-		db.addDep(stmt, stmt)
-	}
-	return stmt, nil
-}
 
 // ErrConnDone is returned by any operation that is performed on a connection
 // that has already been returned to the connection pool.
 var ErrConnDone = errors.New("sql: connection is already closed")
+
+// Conn represents a single database connection rather than a pool of database
+// connections. Prefer running queries from DB unless there is a specific
+// need for a continuous single database connection.
+//
+// A Conn must call Close to return the connection to the database pool
+// and may do so concurrently with a running query.
+//
+// After a call to Close, all operations on the
+// connection fail with ErrConnDone.
+type Conn struct {
+	db *Pool
+
+	// closemu prevents the connection from closing while there
+	// is an active query. It is held for read during queries
+	// and exclusively during close.
+	closemu sync.RWMutex
+
+	// dc is owned until close, at which point
+	// it's returned to the connection pool.
+	dc *driverConn
+
+	// done transitions from 0 to 1 exactly once, on close.
+	// Once done, all operations fail with ErrConnDone.
+	// Use atomic operations on value when checking value.
+	done int32
+}
 
 // Conn returns a single connection by either opening a new connection
 // or returning an existing connection from the connection pool. Conn will
@@ -1197,16 +990,16 @@ var ErrConnDone = errors.New("sql: connection is already closed")
 //
 // Every Conn must be returned to the database pool after use by
 // calling Conn.Close.
-func (db *DB) Conn(ctx context.Context) (*Conn, error) {
+func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 	var dc *driverConn
 	var err error
 	for i := 0; i < maxBadConnRetries; i++ {
 		dc, err = db.conn(ctx, cachedOrNewConn)
-		if err != driver.ErrBadConn {
+		if !errors.Is(err, ErrBadConn) {
 			break
 		}
 	}
-	if err == driver.ErrBadConn {
+	if errors.Is(err, ErrBadConn) {
 		dc, err = db.conn(ctx, alwaysNewConn)
 	}
 	if err != nil {
@@ -1220,7 +1013,30 @@ func (db *DB) Conn(ctx context.Context) (*Conn, error) {
 	return conn, nil
 }
 
-type releaseConn func(error)
+func (c *Conn) close(err error) error {
+	if !atomic.CompareAndSwapInt32(&c.done, 0, 1) {
+		return ErrConnDone
+	}
+
+	// Lock around releasing the driver connection
+	// to ensure all queries have been stopped before doing so.
+	c.closemu.Lock()
+	defer c.closemu.Unlock()
+
+	c.dc.releaseConn(err)
+	c.dc = nil
+	c.db = nil
+	return err
+}
+
+// Close returns the connection to the connection pool.
+// All operations after a Close will return with ErrConnDone.
+// Close is safe to call concurrently with other operations and will
+// block until all other operations finish. It may be useful to first
+// cancel any used context and then call close directly after.
+func (c *Conn) Close() error {
+	return c.close(nil)
+}
 
 func stack() string {
 	var buf [2 << 10]byte
