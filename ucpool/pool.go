@@ -48,7 +48,7 @@ type Pool struct {
 	numClosed uint64
 
 	mu           sync.Mutex // protects following fields
-	freeConn     []*driverConn
+	freeConn     []*DriverConn
 	connRequests map[uint64]chan connRequest
 	nextRequest  uint64 // Next key to use in connRequests.
 	numOpen      int    // number of opened and pending open connections
@@ -60,7 +60,7 @@ type Pool struct {
 	openerCh          chan struct{}
 	closed            bool
 	dep               map[finalCloser]depSet
-	lastPut           map[*driverConn]string // stacktrace of last conn's put; debug only
+	lastPut           map[*DriverConn]string // stacktrace of last conn's put; debug only
 	maxIdleCount      int                    // zero means defaultMaxIdleConns; negative means 0
 	maxOpen           int                    // <= 0 means unlimited
 	maxLifetime       time.Duration          // maximum amount of time a connection may be reused
@@ -86,11 +86,11 @@ const (
 	cachedOrNewConn
 )
 
-// driverConn wraps a driver.Conn with a mutex, to
+// DriverConn wraps a driver.Conn with a mutex, to
 // be held during all calls into the Conn. (including any calls onto
 // interfaces returned via that Conn, such as calls on Tx, Stmt,
 // Result, Rows)
-type driverConn struct {
+type DriverConn struct {
 	db        *Pool
 	createdAt time.Time
 
@@ -107,11 +107,11 @@ type driverConn struct {
 	dbmuClosed bool      // same as closed, but guarded by db.mu, for removeClosedStmtLocked
 }
 
-func (dc *driverConn) releaseConn(err error) {
+func (dc *DriverConn) releaseConn(err error) {
 	dc.db.putConn(dc, err, true)
 }
 
-func (dc *driverConn) expired(timeout time.Duration) bool {
+func (dc *DriverConn) expired(timeout time.Duration) bool {
 	if timeout <= 0 {
 		return false
 	}
@@ -120,7 +120,7 @@ func (dc *driverConn) expired(timeout time.Duration) bool {
 
 // resetSession checks if the driver connection needs the
 // session to be reset and if required, resets it.
-func (dc *driverConn) resetSession(ctx context.Context) error {
+func (dc *DriverConn) resetSession(ctx context.Context) error {
 	dc.Lock()
 	defer dc.Unlock()
 
@@ -135,7 +135,7 @@ func (dc *driverConn) resetSession(ctx context.Context) error {
 
 // validateConnection checks if the connection is valid and can
 // still be used. It also marks the session for reset if required.
-func (dc *driverConn) validateConnection(needsReset bool) bool {
+func (dc *DriverConn) validateConnection(needsReset bool) bool {
 	dc.Lock()
 	defer dc.Unlock()
 
@@ -151,7 +151,7 @@ func (dc *driverConn) validateConnection(needsReset bool) bool {
 var ErrDuplicateClose = errors.New("sql: duplicate driverConn close")
 
 // the dc.db's Mutex is held.
-func (dc *driverConn) closePoolLocked() func() error {
+func (dc *DriverConn) closePoolLocked() func() error {
 	dc.Lock()
 	defer dc.Unlock()
 	if dc.closed {
@@ -161,7 +161,7 @@ func (dc *driverConn) closePoolLocked() func() error {
 	return dc.db.removeDepLocked(dc, dc)
 }
 
-func (dc *driverConn) Close() error {
+func (dc *DriverConn) Close() error {
 	dc.Lock()
 	if dc.closed {
 		dc.Unlock()
@@ -178,7 +178,7 @@ func (dc *driverConn) Close() error {
 	return fn()
 }
 
-func (dc *driverConn) finalClose() error {
+func (dc *DriverConn) finalClose() error {
 	var err error
 
 	withLock(dc, func() {
@@ -265,7 +265,7 @@ func OpenPool(ctx context.Context, c driver.Connector) *Pool {
 	db := &Pool{
 		connector:    c,
 		openerCh:     make(chan struct{}, connectionRequestQueueSize),
-		lastPut:      make(map[*driverConn]string),
+		lastPut:      make(map[*DriverConn]string),
 		connRequests: make(map[uint64]chan connRequest),
 		stop:         cancel,
 	}
@@ -368,7 +368,7 @@ func (db *Pool) SetMaxIdleConns(n int) {
 	if db.maxOpen > 0 && db.maxIdleConnsLocked() > db.maxOpen {
 		db.maxIdleCount = db.maxOpen
 	}
-	var closing []*driverConn
+	var closing []*DriverConn
 	maxIdle := db.maxIdleConnsLocked()
 	if len(db.freeConn) > maxIdle {
 		closing = db.freeConn[maxIdle:]
@@ -492,7 +492,7 @@ func (db *Pool) connectionCleaner(d time.Duration) {
 	}
 }
 
-func (db *Pool) connectionCleanerRunLocked() (closing []*driverConn) {
+func (db *Pool) connectionCleanerRunLocked() (closing []*DriverConn) {
 	if db.maxLifetime > 0 {
 		expiredSince := nowFunc().Add(-db.maxLifetime)
 		for i := 0; i < len(db.freeConn); i++ {
@@ -623,7 +623,7 @@ func (db *Pool) openNewConnection(ctx context.Context) {
 		db.maybeOpenNewConnections()
 		return
 	}
-	dc := &driverConn{
+	dc := &DriverConn{
 		db:         db,
 		createdAt:  nowFunc(),
 		returnedAt: nowFunc(),
@@ -641,7 +641,7 @@ func (db *Pool) openNewConnection(ctx context.Context) {
 // When there are no idle connections available, Pool.conn will create
 // a new connRequest and put it on the db.connRequests list.
 type connRequest struct {
-	conn *driverConn
+	conn *DriverConn
 	err  error
 }
 
@@ -657,7 +657,7 @@ func (db *Pool) nextRequestKeyLocked() uint64 {
 
 // conn returns a newly-opened or cached *driverConn.
 // nolint:funlen,gocyclo,gocognit // long function
-func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverConn, error) {
+func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*DriverConn, error) {
 	db.mu.Lock()
 	if db.closed {
 		db.mu.Unlock()
@@ -772,7 +772,7 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverCo
 		return nil, err
 	}
 	db.mu.Lock()
-	dc := &driverConn{
+	dc := &DriverConn{
 		db:         db,
 		createdAt:  nowFunc(),
 		returnedAt: nowFunc(),
@@ -785,7 +785,7 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverCo
 }
 
 // putConnHook is a hook for testing.
-var putConnHook func(*Pool, *driverConn)
+var putConnHook func(*Pool, *DriverConn)
 
 // debugGetPut determines whether getConn & putConn calls' stack traces
 // are returned for more verbose crashes.
@@ -794,7 +794,7 @@ const debugGetPut = false
 // putConn adds a connection to the db's free pool.
 // err is optionally the last error that occurred on this connection.
 // nolint:gocyclo // long function
-func (db *Pool) putConn(dc *driverConn, err error, resetSession bool) {
+func (db *Pool) putConn(dc *DriverConn, err error, resetSession bool) {
 	if !errors.Is(err, ErrBadConn) {
 		if !dc.validateConnection(resetSession) {
 			err = ErrBadConn
@@ -856,7 +856,7 @@ func (db *Pool) putConn(dc *driverConn, err error, resetSession bool) {
 // If err == nil, then dc must not equal nil.
 // If a connRequest was fulfilled or the *driverConn was placed in the
 // freeConn list, then true is returned, otherwise false is returned.
-func (db *Pool) putConnPoolLocked(dc *driverConn, err error) bool {
+func (db *Pool) putConnPoolLocked(dc *DriverConn, err error) bool {
 	if db.closed {
 		return false
 	}
@@ -917,13 +917,25 @@ type Conn struct {
 
 	// dc is owned until close, at which point
 	// it's returned to the connection pool.
-	dc *driverConn
+	dc *DriverConn
 
 	// done transitions from 0 to 1 exactly once, on close.
 	// Once done, all operations fail with ErrConnDone.
 	// Use atomic operations on value when checking value.
 	done int32
 }
+
+// grabConn takes a context to implement stmtConnGrabber
+// but the context is not used.
+func (c *Conn) GrabConn(context.Context) (*DriverConn, ReleaseConn, error) {
+	if atomic.LoadInt32(&c.done) != 0 {
+		return nil, nil, ErrConnDone
+	}
+	c.closemu.RLock()
+	return c.dc, c.closemuRUnlockCondReleaseConn, nil
+}
+
+type ReleaseConn func(error)
 
 // Conn returns a single connection by either opening a new connection
 // or returning an existing connection from the connection pool. Conn will
@@ -933,7 +945,7 @@ type Conn struct {
 // Every Conn must be returned to the pool after use by
 // calling Conn.Close.
 func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
-	var dc *driverConn
+	var dc *DriverConn
 	var err error
 	for i := 0; i < maxBadConnRetries; i++ {
 		dc, err = db.conn(ctx, cachedOrNewConn)
@@ -953,6 +965,15 @@ func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 		dc: dc,
 	}
 	return conn, nil
+}
+
+// closemuRUnlockCondReleaseConn read unlocks closemu
+// as the sql operation is done with the dc.
+func (c *Conn) closemuRUnlockCondReleaseConn(err error) {
+	c.closemu.RUnlock()
+	if err == ErrBadConn {
+		c.close(err)
+	}
 }
 
 func (c *Conn) close(err error) error {
