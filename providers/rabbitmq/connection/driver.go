@@ -19,7 +19,7 @@ func NewDriver(name string) *Driver {
 	}
 }
 
-// Open opens a new connection to the RabbitMQ
-func (d *Driver) Open(_ context.Context) (io.Closer, error) {
+// Connect opens a new connection to the RabbitMQ
+func (d *Driver) Connect(_ context.Context) (io.Closer, error) {
 	return amqp.Dial(d.name)
 }
