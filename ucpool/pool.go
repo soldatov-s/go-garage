@@ -107,6 +107,11 @@ type DriverConn struct {
 	dbmuClosed bool      // same as closed, but guarded by db.mu, for removeClosedStmtLocked
 }
 
+// GetCi returns connection interface
+func (dc *DriverConn) GetCi() interface{} {
+	return dc.ci
+}
+
 func (dc *DriverConn) releaseConn(err error) {
 	dc.db.putConn(dc, err, true)
 }
