@@ -1,20 +1,5 @@
-// Package ucpool create on base database/sql pakage
+// Package ucpool created on base database/sql pakage
 //
-// Copyright 2011 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Package sql provides a generic interface around SQL (or SQL-like)
-// databases.
-//
-// The sql package must be used in conjunction with a database driver.
-// See https://golang.org/s/sqldrivers for a list of drivers.
-//
-// Drivers that do not support context cancellation will not return until
-// after the query is completed.
-//
-// For usage examples, see the wiki page at
-// https://golang.org/s/sqlwiki.
 package ucpool
 
 import (
@@ -39,22 +24,17 @@ var nowFunc = time.Now
 // retry on a new connection.
 //
 // To prevent duplicate operations, ErrBadConn should NOT be returned
-// if there's a possibility that the database server might have
+// if there's a possibility that the server might have
 // performed the operation. Even if the server sends back an error,
 // you shouldn't return ErrBadConn.
 var ErrBadConn = errors.New("driver: bad connection")
 
-// Pool is a database handle representing a pool of zero or more
+// Pool is a handle representing a pool of zero or more
 // underlying connections. It's safe for concurrent use by multiple
 // goroutines.
 //
 // The sql package creates and frees connections automatically; it
-// also maintains a free pool of idle connections. If the database has
-// a concept of per-connection state, such state can be reliably observed
-// within a transaction (Tx) or connection (Conn). Once Pool.Begin is called, the
-// returned Tx is bound to a single connection. Once Commit or
-// Rollback is called on the transaction, that transaction's
-// connection is returned to Pool's idle connection pool. The pool size
+// also maintains a free pool of idle connections. The pool size
 // can be controlled with SetMaxIdleConns.
 type Pool struct {
 	// Atomic access only. At top of struct to prevent mis-alignment
@@ -94,15 +74,15 @@ type Pool struct {
 	stop func() // stop cancels the connection opener.
 }
 
-// connReuseStrategy determines how (*DB).conn returns database connections.
+// connReuseStrategy determines how (*Pool).conn returns connections.
 type connReuseStrategy uint8
 
 const (
-	// alwaysNewConn forces a new connection to the database.
+	// alwaysNewConn forces a new connection.
 	alwaysNewConn connReuseStrategy = iota
 	// cachedOrNewConn returns a cached connection, if available, else waits
 	// for one to become available (if MaxOpenConns has been reached) or
-	// creates a new database connection.
+	// creates a new connection.
 	cachedOrNewConn
 )
 
@@ -171,7 +151,7 @@ func (dc *driverConn) validateConnection(needsReset bool) bool {
 var ErrDuplicateClose = errors.New("sql: duplicate driverConn close")
 
 // the dc.db's Mutex is held.
-func (dc *driverConn) closeDBLocked() func() error {
+func (dc *driverConn) closePoolLocked() func() error {
 	dc.Lock()
 	defer dc.Unlock()
 	if dc.closed {
@@ -219,11 +199,11 @@ func (dc *driverConn) finalClose() error {
 // depSet is a finalCloser's outstanding dependencies
 type depSet map[interface{}]bool // set of true bools
 
-// The finalCloser interface is used by (*DB).addDep and related
+// The finalCloser interface is used by (*Pool).addDep and related
 // dependency reference counting.
 type finalCloser interface {
 	// finalClose is called when the reference count of an object
-	// goes to zero. (*DB).mu is not held while calling it.
+	// goes to zero. (*Pool).mu is not held while calling it.
 	finalClose() error
 }
 
@@ -262,44 +242,26 @@ func (db *Pool) removeDepLocked(x finalCloser, dep interface{}) func() error {
 	}
 }
 
-// This is the size of the connectionOpener request chan (DB.openerCh).
+// This is the size of the connectionOpener request chan (Pool.openerCh).
 // This value should be larger than the maximum typical value
 // used for db.maxOpen. If maxOpen is significantly larger than
-// connectionRequestQueueSize then it is possible for ALL calls into the *DB
+// connectionRequestQueueSize then it is possible for ALL calls into the *Pool
 // to block until the connectionOpener can satisfy the backlog of requests.
 var connectionRequestQueueSize = 1000000
 
-type dsnConnector struct {
-	dsn    string
-	driver driver.Driver
-}
-
-func (t dsnConnector) Connect(_ context.Context) (io.Closer, error) {
-	return t.driver.Open(t.dsn)
-}
-
-func (t dsnConnector) Driver() driver.Driver {
-	return t.driver
-}
-
-// OpenDB opens a database using a Connector, allowing drivers to
+// OpenPool opens a db, message broker and etc. using a Connector, allowing drivers to
 // bypass a string based data source name.
 //
-// Most users will open a database via a driver-specific connection
-// helper function that returns a *DB. No database drivers are included
-// in the Go standard library. See https://golang.org/s/sqldrivers for
-// a list of third-party drivers.
-//
-// OpenDB may just validate its arguments without creating a connection
-// to the database. To verify that the data source name is valid, call
+// OpenPool may just validate its arguments without creating a connection
+// to the db, message broker and etc. To verify that the data source name is valid, call
 // Ping.
 //
-// The returned DB is safe for concurrent use by multiple goroutines
-// and maintains its own pool of idle connections. Thus, the OpenDB
+// The returned Pool is safe for concurrent use by multiple goroutines
+// and maintains its own pool of idle connections. Thus, the OpenPool
 // function should be called just once. It is rarely necessary to
-// close a DB.
-func OpenDB(c driver.Connector) *Pool {
-	ctx, cancel := context.WithCancel(context.Background())
+// close a Pool.
+func OpenPool(ctx context.Context, c driver.Connector) *Pool {
+	ctx, cancel := context.WithCancel(ctx)
 	db := &Pool{
 		connector:    c,
 		openerCh:     make(chan struct{}, connectionRequestQueueSize),
@@ -313,36 +275,15 @@ func OpenDB(c driver.Connector) *Pool {
 	return db
 }
 
-// Open opens a database specified by its database driver name and a
-// driver-specific data source name, usually consisting of at least a
-// database name and connection information.
-//
-// Most users will open a database via a driver-specific connection
-// helper function that returns a *DB. No database drivers are included
-// in the Go standard library. See https://golang.org/s/sqldrivers for
-// a list of third-party drivers.
-//
-// Open may just validate its arguments without creating a connection
-// to the database. To verify that the data source name is valid, call
-// Ping.
-//
-// The returned DB is safe for concurrent use by multiple goroutines
-// and maintains its own pool of idle connections. Thus, the Open
-// function should be called just once. It is rarely necessary to
-// close a DB.
-func Open(dataSourceName string, driveri driver.Driver) (*Pool, error) {
-	return OpenDB(dsnConnector{dsn: dataSourceName, driver: driveri}), nil
-}
-
-// Close closes the database and prevents new queries from starting.
+// Close closes the db, message broker and etc. `and prevents new queries from starting.`
 // Close then waits for all queries that have started processing on the server
 // to finish.
 //
-// It is rare to Close a DB, as the DB handle is meant to be
+// It is rare to Close a Pool, as the Pool handle is meant to be
 // long-lived and shared between many goroutines.
 func (db *Pool) Close() error {
 	db.mu.Lock()
-	if db.closed { // Make DB.Close idempotent
+	if db.closed { // Make Pool.Close idempotent
 		db.mu.Unlock()
 		return nil
 	}
@@ -352,7 +293,7 @@ func (db *Pool) Close() error {
 	var err error
 	fns := make([]func() error, 0, len(db.freeConn))
 	for _, dc := range db.freeConn {
-		fns = append(fns, dc.closeDBLocked())
+		fns = append(fns, dc.closePoolLocked())
 	}
 	db.freeConn = nil
 	db.closed = true
@@ -440,7 +381,8 @@ func (db *Pool) SetMaxIdleConns(n int) {
 	}
 }
 
-// SetMaxOpenConns sets the maximum number of open connections to the database.
+// SetMaxOpenConns sets the maximum number of open connections to
+// the db, message broker and etc..
 //
 // If MaxIdleConns is greater than 0 and the new MaxOpenConns is less than
 // MaxIdleConns, then MaxIdleConns will be reduced to match the new
@@ -587,9 +529,9 @@ func (db *Pool) connectionCleanerRunLocked() (closing []*driverConn) {
 	return
 }
 
-// DBStats contains database statistics.
-type DBStats struct {
-	MaxOpenConnections int // Maximum number of open connections to the database.
+// PoolStats contains connection statistics.
+type PoolStats struct {
+	MaxOpenConnections int // Maximum number of open connections.
 
 	// Pool Status
 	OpenConnections int // The number of established connections both in use and idle.
@@ -604,14 +546,14 @@ type DBStats struct {
 	MaxLifetimeClosed int64         // The total number of connections closed due to SetConnMaxLifetime.
 }
 
-// Stats returns database statistics.
-func (db *Pool) Stats() DBStats {
+// Stats returns connection statistics.
+func (db *Pool) Stats() PoolStats {
 	wait := atomic.LoadInt64(&db.waitDuration)
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	stats := DBStats{
+	stats := PoolStats{
 		MaxOpenConnections: db.maxOpen,
 
 		Idle:            len(db.freeConn),
@@ -677,7 +619,7 @@ func (db *Pool) openNewConnection(ctx context.Context) {
 	}
 	if err != nil {
 		db.numOpen--
-		db.putConnDBLocked(nil, err)
+		db.putConnPoolLocked(nil, err)
 		db.maybeOpenNewConnections()
 		return
 	}
@@ -687,7 +629,7 @@ func (db *Pool) openNewConnection(ctx context.Context) {
 		returnedAt: nowFunc(),
 		ci:         ci,
 	}
-	if db.putConnDBLocked(dc, err) {
+	if db.putConnPoolLocked(dc, err) {
 		db.addDepLocked(dc, dc)
 	} else {
 		db.numOpen--
@@ -696,14 +638,14 @@ func (db *Pool) openNewConnection(ctx context.Context) {
 }
 
 // connRequest represents one request for a new connection
-// When there are no idle connections available, DB.conn will create
+// When there are no idle connections available, Pool.conn will create
 // a new connRequest and put it on the db.connRequests list.
 type connRequest struct {
 	conn *driverConn
 	err  error
 }
 
-var errDBClosed = errors.New("sql: database is closed")
+var errPoolClosed = errors.New("pool is closed")
 
 // nextRequestKeyLocked returns the next connection request key.
 // It is assumed that nextRequest will not overflow.
@@ -719,7 +661,7 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverCo
 	db.mu.Lock()
 	if db.closed {
 		db.mu.Unlock()
-		return nil, errDBClosed
+		return nil, errPoolClosed
 	}
 	// Check if the context is expired.
 	select {
@@ -791,7 +733,7 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*driverCo
 			atomic.AddInt64(&db.waitDuration, int64(time.Since(waitStart)))
 
 			if !ok {
-				return nil, errDBClosed
+				return nil, errPoolClosed
 			}
 			// Only check if the connection is expired if the strategy is cachedOrNewConns.
 			// If we require a new connection, just re-use the connection without looking
@@ -896,7 +838,7 @@ func (db *Pool) putConn(dc *driverConn, err error, resetSession bool) {
 	if putConnHook != nil {
 		putConnHook(db, dc)
 	}
-	added := db.putConnDBLocked(dc, nil)
+	added := db.putConnPoolLocked(dc, nil)
 	db.mu.Unlock()
 
 	if !added {
@@ -907,14 +849,14 @@ func (db *Pool) putConn(dc *driverConn, err error, resetSession bool) {
 
 // Satisfy a connRequest or put the driverConn in the idle pool and return true
 // or return false.
-// putConnDBLocked will satisfy a connRequest if there is one, or it will
+// putConnPoolLocked will satisfy a connRequest if there is one, or it will
 // return the *driverConn to the freeConn list if err == nil and the idle
 // connection limit will not be exceeded.
 // If err != nil, the value of dc is ignored.
 // If err == nil, then dc must not equal nil.
 // If a connRequest was fulfilled or the *driverConn was placed in the
 // freeConn list, then true is returned, otherwise false is returned.
-func (db *Pool) putConnDBLocked(dc *driverConn, err error) bool {
+func (db *Pool) putConnPoolLocked(dc *driverConn, err error) bool {
 	if db.closed {
 		return false
 	}
@@ -956,11 +898,11 @@ const maxBadConnRetries = 2
 // that has already been returned to the connection pool.
 var ErrConnDone = errors.New("sql: connection is already closed")
 
-// Conn represents a single database connection rather than a pool of database
-// connections. Prefer running queries from DB unless there is a specific
-// need for a continuous single database connection.
+// Conn represents a single connection rather than a pool of
+// connections. Prefer running queries from Pool unless there is a specific
+// need for a continuous single connection.
 //
-// A Conn must call Close to return the connection to the database pool
+// A Conn must call Close to return the connection to the pool
 // and may do so concurrently with a running query.
 //
 // After a call to Close, all operations on the
@@ -986,9 +928,9 @@ type Conn struct {
 // Conn returns a single connection by either opening a new connection
 // or returning an existing connection from the connection pool. Conn will
 // block until either a connection is returned or ctx is canceled.
-// Queries run on the same Conn will be run in the same database session.
+// Queries run on the same Conn will be run in the same session.
 //
-// Every Conn must be returned to the database pool after use by
+// Every Conn must be returned to the pool after use by
 // calling Conn.Close.
 func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 	var dc *driverConn
