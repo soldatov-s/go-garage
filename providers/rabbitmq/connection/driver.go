@@ -1,17 +1,25 @@
 package rabbitmqcon
 
 import (
+	"context"
 	"io"
 
 	"github.com/streadway/amqp"
 )
 
-// Driver is the Postgres database driver.
-type Driver struct{}
+// Driver is the RabbitMQ connection driver.
+type Driver struct {
+	name string
+}
 
-// Open opens a new connection to the database. name is a connection string.
-// Most users should only use it through database/sql package from the standard
-// library.
-func (d *Driver) Open(name string) (io.Closer, error) {
-	return amqp.Dial(name)
+// NewDriver creates driver, name is a connection string.
+func NewDriver(name string) *Driver {
+	return &Driver{
+		name: name,
+	}
+}
+
+// Open opens a new connection to the RabbitMQ
+func (d *Driver) Open(_ context.Context) (io.Closer, error) {
+	return amqp.Dial(d.name)
 }
