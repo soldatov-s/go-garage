@@ -2,6 +2,7 @@ package rabbitmqcon
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/streadway/amqp"
@@ -22,4 +23,12 @@ func NewDriver(name string) *Driver {
 // Connect opens a new connection to the RabbitMQ
 func (d *Driver) Connect(_ context.Context) (io.Closer, error) {
 	return amqp.Dial(d.name)
+}
+
+func (d *Driver) GetErrBadConn() error {
+	return amqp.ErrClosed
+}
+
+func (d *Driver) IsErrBadConn(err error) bool {
+	return errors.Is(err, amqp.ErrClosed)
 }
