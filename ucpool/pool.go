@@ -18,17 +18,6 @@ import (
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
 
-// ErrBadConn should be returned by a driver to signal to the sql
-// package that a driver.Conn is in a bad state (such as the server
-// having earlier closed the connection) and the sql package should
-// retry on a new connection.
-//
-// To prevent duplicate operations, ErrBadConn should NOT be returned
-// if there's a possibility that the server might have
-// performed the operation. Even if the server sends back an error,
-// you shouldn't return ErrBadConn.
-var ErrBadConn = errors.New("driver: bad connection")
-
 // Pool is a handle representing a pool of zero or more
 // underlying connections. It's safe for concurrent use by multiple
 // goroutines.
@@ -199,6 +188,10 @@ func (dc *DriverConn) finalClose() error {
 
 	atomic.AddUint64(&dc.db.numClosed, 1)
 	return err
+}
+
+func (dc *DriverConn) WithLock(fn func()) {
+	withLock(dc, fn)
 }
 
 // depSet is a finalCloser's outstanding dependencies
@@ -688,14 +681,14 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*DriverCo
 			db.maxLifetimeClosed++
 			db.mu.Unlock()
 			conn.Close()
-			return nil, ErrBadConn
+			return nil, db.connector.GetErrBadConn()
 		}
 		db.mu.Unlock()
 
 		// Reset the session if required.
-		if err := conn.resetSession(ctx); errors.Is(err, ErrBadConn) {
+		if err := conn.resetSession(ctx); db.connector.IsErrBadConn(err) {
 			conn.Close()
-			return nil, ErrBadConn
+			return nil, db.connector.GetErrBadConn()
 		}
 
 		return conn, nil
@@ -751,16 +744,16 @@ func (db *Pool) conn(ctx context.Context, strategy connReuseStrategy) (*DriverCo
 				db.maxLifetimeClosed++
 				db.mu.Unlock()
 				ret.conn.Close()
-				return nil, ErrBadConn
+				return nil, db.connector.GetErrBadConn()
 			}
 			if ret.conn == nil {
 				return nil, ret.err
 			}
 
 			// Reset the session if required.
-			if err := ret.conn.resetSession(ctx); errors.Is(err, ErrBadConn) {
+			if err := ret.conn.resetSession(ctx); db.connector.IsErrBadConn(err) {
 				ret.conn.Close()
-				return nil, ErrBadConn
+				return nil, db.connector.GetErrBadConn()
 			}
 			return ret.conn, ret.err
 		}
@@ -800,9 +793,9 @@ const debugGetPut = false
 // err is optionally the last error that occurred on this connection.
 // nolint:gocyclo // long function
 func (db *Pool) putConn(dc *DriverConn, err error, resetSession bool) {
-	if !errors.Is(err, ErrBadConn) {
+	if !db.connector.IsErrBadConn(err) {
 		if !dc.validateConnection(resetSession) {
-			err = ErrBadConn
+			err = db.connector.GetErrBadConn()
 		}
 	}
 	db.mu.Lock()
@@ -815,9 +808,9 @@ func (db *Pool) putConn(dc *DriverConn, err error, resetSession bool) {
 		panic("sql: connection returned that was never out")
 	}
 
-	if !errors.Is(err, ErrBadConn) && dc.expired(db.maxLifetime) {
+	if !db.connector.IsErrBadConn(err) && dc.expired(db.maxLifetime) {
 		db.maxLifetimeClosed++
-		err = ErrBadConn
+		err = db.connector.GetErrBadConn()
 	}
 	if debugGetPut {
 		db.lastPut[dc] = stack()
@@ -830,7 +823,7 @@ func (db *Pool) putConn(dc *DriverConn, err error, resetSession bool) {
 	}
 	dc.onPut = nil
 
-	if errors.Is(err, ErrBadConn) {
+	if db.connector.IsErrBadConn(err) {
 		// Don't reuse bad connections.
 		// Since the conn is considered bad and is being discarded, treat it
 		// as closed. Don't decrement the open count here, finalClose will
@@ -954,11 +947,11 @@ func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 	var err error
 	for i := 0; i < maxBadConnRetries; i++ {
 		dc, err = db.conn(ctx, cachedOrNewConn)
-		if !errors.Is(err, ErrBadConn) {
+		if !db.connector.IsErrBadConn(err) {
 			break
 		}
 	}
-	if errors.Is(err, ErrBadConn) {
+	if db.connector.IsErrBadConn(err) {
 		dc, err = db.conn(ctx, alwaysNewConn)
 	}
 	if err != nil {
@@ -976,7 +969,7 @@ func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 // as the sql operation is done with the dc.
 func (c *Conn) closemuRUnlockCondReleaseConn(err error) {
 	c.closemu.RUnlock()
-	if err == ErrBadConn {
+	if c.db.connector.IsErrBadConn(err) {
 		c.close(err)
 	}
 }

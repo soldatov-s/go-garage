@@ -5,25 +5,6 @@ import (
 	"io"
 )
 
-// Driver is the interface that must be implemented by a database
-// driver.
-//
-// Database drivers may implement DriverContext for access
-// to contexts and to parse the name only once for a pool of connections,
-// instead of once per connection.
-type Driver interface {
-	// Open returns a new connection to the database.
-	// The name is a string in a driver-specific format.
-	//
-	// Open may return a cached connection (one previously
-	// closed), but doing so is unnecessary; the sql package
-	// maintains a pool of idle connections for efficient re-use.
-	//
-	// The returned connection is only used by one goroutine at a
-	// time.
-	Open(name string) (io.Closer, error)
-}
-
 // A Connector represents a driver in a fixed configuration
 // and can create any number of equivalent Conns for use
 // by multiple goroutines.
@@ -51,6 +32,20 @@ type Connector interface {
 	// The returned connection is only used by one goroutine at a
 	// time.
 	Connect(context.Context) (io.Closer, error)
+	// GetErrBadConn returns expected err that means an ErrBadConn
+	// (bad connection error).
+	// This error should be returned by a driver to signal to the sql
+	// package that a driver.Conn is in a bad state (such as the server
+	// having earlier closed the connection) and the sql package should
+	// retry on a new connection.
+	//
+	// To prevent duplicate operations, ErrBadConn should NOT be returned
+	// if there's a possibility that the server might have
+	// performed the operation. Even if the server sends back an error,
+	// you shouldn't return ErrBadConn.
+	GetErrBadConn() error
+	// IsErrBadConn returns that checked err is a bad connection error
+	IsErrBadConn(err error) bool
 }
 
 // SessionResetter may be implemented by Conn to allow drivers to reset the
