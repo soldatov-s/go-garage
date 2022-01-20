@@ -75,7 +75,8 @@ func (e *Enity) GetConfig() *Config {
 	return e.config
 }
 
-func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config, errorGroup *errgroup.Group) (*rabbitmqconsum.Consumer, error) {
+func (e *Enity) AddConsumer(
+	ctx context.Context, config *rabbitmqconsum.Config, errorGroup *errgroup.Group) (*rabbitmqconsum.Consumer, error) {
 	name := stringsx.JoinStrings("_", config.ExchangeName, config.RabbitQueue, config.RabbitConsume, config.RoutingKey)
 	if _, ok := e.consumers[name]; ok {
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
@@ -99,7 +100,8 @@ func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config, 
 	return consumer, nil
 }
 
-func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config, errorGroup *errgroup.Group) (*rabbitmqpub.Publisher, error) {
+func (e *Enity) AddPublisher(
+	ctx context.Context, config *rabbitmqpub.Config, errorGroup *errgroup.Group) (*rabbitmqpub.Publisher, error) {
 	name := stringsx.JoinStrings("_", config.ExchangeName, config.RoutingKey)
 	if _, ok := e.consumers[name]; ok {
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)

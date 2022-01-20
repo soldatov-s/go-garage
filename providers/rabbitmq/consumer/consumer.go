@@ -17,6 +17,7 @@ type Connector interface {
 	ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	QueueDeclare(ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
 	QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error
+	//nolint:lll // long the function signature
 	Consume(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
 	IsClosed() bool
 }
