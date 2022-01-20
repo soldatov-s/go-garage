@@ -1,10 +1,10 @@
+//
 // Package ucpool created on base database/sql pakage
 //
 package ucpool
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/ucpool/driver"
 )
 
@@ -22,7 +23,7 @@ var nowFunc = time.Now
 // underlying connections. It's safe for concurrent use by multiple
 // goroutines.
 //
-// The sql package creates and frees connections automatically; it
+// The ucpool package creates and frees connections automatically; it
 // also maintains a free pool of idle connections. The pool size
 // can be controlled with SetMaxIdleConns.
 type Pool struct {
@@ -894,7 +895,7 @@ const maxBadConnRetries = 2
 
 // ErrConnDone is returned by any operation that is performed on a connection
 // that has already been returned to the connection pool.
-var ErrConnDone = errors.New("sql: connection is already closed")
+var ErrConnDone = errors.New("connection is already closed")
 
 // Conn represents a single connection rather than a pool of
 // connections. Prefer running queries from Pool unless there is a specific
@@ -906,8 +907,7 @@ var ErrConnDone = errors.New("sql: connection is already closed")
 // After a call to Close, all operations on the
 // connection fail with ErrConnDone.
 type Conn struct {
-	db *Pool
-
+	pool *Pool
 	// closemu prevents the connection from closing while there
 	// is an active query. It is held for read during queries
 	// and exclusively during close.
@@ -959,17 +959,17 @@ func (db *Pool) Conn(ctx context.Context) (*Conn, error) {
 	}
 
 	conn := &Conn{
-		db: db,
-		dc: dc,
+		pool: db,
+		dc:   dc,
 	}
 	return conn, nil
 }
 
 // closemuRUnlockCondReleaseConn read unlocks closemu
-// as the sql operation is done with the dc.
+// as the operation is done with the dc.
 func (c *Conn) closemuRUnlockCondReleaseConn(err error) {
 	c.closemu.RUnlock()
-	if c.db.connector.IsErrBadConn(err) {
+	if c.pool.connector.IsErrBadConn(err) {
 		c.close(err)
 	}
 }
@@ -986,7 +986,7 @@ func (c *Conn) close(err error) error {
 
 	c.dc.releaseConn(err)
 	c.dc = nil
-	c.db = nil
+	c.pool = nil
 	return err
 }
 
