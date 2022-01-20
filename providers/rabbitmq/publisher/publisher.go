@@ -19,8 +19,8 @@ const (
 )
 
 type Connector interface {
-	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
-	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 }
 
 // Publisher is a RabbitPublisher
@@ -54,14 +54,14 @@ func NewPublisher(ctx context.Context, config *Config, ch Connector) (*Publisher
 	return enity, nil
 }
 
-func (p *Publisher) connect(_ context.Context) error {
+func (p *Publisher) connect(ctx context.Context) error {
 	p.muConn.Lock()
 	defer p.muConn.Unlock()
 	if p.isConnected {
 		return nil
 	}
 
-	if err := p.conn.ExchangeDeclare(p.config.ExchangeName, "direct", true,
+	if err := p.conn.ExchangeDeclare(ctx, p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return errors.Wrap(err, "declare a exchange")
@@ -117,6 +117,7 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 	}
 
 	if err := p.conn.Publish(
+		ctx,
 		p.config.ExchangeName,
 		p.config.RoutingKey,
 		false,

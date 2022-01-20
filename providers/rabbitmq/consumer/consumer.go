@@ -14,10 +14,10 @@ import (
 //go:generate mockgen --source=./consumer.go -destination=./consumer_mocks_test.go -package=rabbitmqconsum_test
 
 type Connector interface {
-	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
-	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
-	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
-	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
+	ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	QueueDeclare(ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error
+	Consume(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
 	IsClosed() bool
 }
 
@@ -44,14 +44,15 @@ func NewConsumer(ctx context.Context, config *Config, ch Connector) (*Consumer, 
 	return c, nil
 }
 
-func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
-	if err := c.conn.ExchangeDeclare(c.config.ExchangeName, "direct", true,
+func (c *Consumer) connect(ctx context.Context) (<-chan amqp.Delivery, error) {
+	if err := c.conn.ExchangeDeclare(ctx, c.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return nil, errors.Wrap(err, "declare a exchange")
 	}
 
 	if _, err := c.conn.QueueDeclare(
+		ctx,
 		c.config.RabbitQueue, // name
 		true,                 // durable
 		false,                // delete when unused
@@ -63,6 +64,7 @@ func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
 	}
 
 	if err := c.conn.QueueBind(
+		ctx,
 		c.config.RabbitQueue,  // queue name
 		c.config.RoutingKey,   // routing key
 		c.config.ExchangeName, // exchange
@@ -73,6 +75,7 @@ func (c *Consumer) connect(_ context.Context) (<-chan amqp.Delivery, error) {
 	}
 
 	msg, err := c.conn.Consume(
+		ctx,
 		c.config.RabbitQueue,   // queue
 		c.config.RabbitConsume, // consume
 		false,                  // auto-ack

@@ -5,6 +5,7 @@
 package rabbitmqpub_test
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -35,29 +36,29 @@ func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 }
 
 // ExchangeDeclare mocks base method.
-func (m *MockConnector) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+func (m *MockConnector) ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ExchangeDeclare", name, kind, durable, autoDelete, internal, noWait, args)
+	ret := m.ctrl.Call(m, "ExchangeDeclare", ctx, name, kind, durable, autoDelete, internal, noWait, args)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ExchangeDeclare indicates an expected call of ExchangeDeclare.
-func (mr *MockConnectorMockRecorder) ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) ExchangeDeclare(ctx, name, kind, durable, autoDelete, internal, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockConnector)(nil).ExchangeDeclare), name, kind, durable, autoDelete, internal, noWait, args)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeDeclare", reflect.TypeOf((*MockConnector)(nil).ExchangeDeclare), ctx, name, kind, durable, autoDelete, internal, noWait, args)
 }
 
 // Publish mocks base method.
-func (m *MockConnector) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+func (m *MockConnector) Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Publish", exchange, key, mandatory, immediate, msg)
+	ret := m.ctrl.Call(m, "Publish", ctx, exchange, key, mandatory, immediate, msg)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Publish indicates an expected call of Publish.
-func (mr *MockConnectorMockRecorder) Publish(exchange, key, mandatory, immediate, msg interface{}) *gomock.Call {
+func (mr *MockConnectorMockRecorder) Publish(ctx, exchange, key, mandatory, immediate, msg interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockConnector)(nil).Publish), exchange, key, mandatory, immediate, msg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Publish", reflect.TypeOf((*MockConnector)(nil).Publish), ctx, exchange, key, mandatory, immediate, msg)
 }

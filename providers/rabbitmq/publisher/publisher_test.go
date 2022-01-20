@@ -54,6 +54,7 @@ func TestPublisher_SendMessage(t *testing.T) {
 			defer ctrl.Finish()
 			ch := NewMockConnector(ctrl)
 			ch.EXPECT().ExchangeDeclare(
+				tt.args.ctx,
 				tt.config.ExchangeName,
 				"direct",
 				true,
@@ -70,6 +71,7 @@ func TestPublisher_SendMessage(t *testing.T) {
 
 			if !tt.wantErr {
 				ch.EXPECT().Publish(
+					tt.args.ctx,
 					tt.config.ExchangeName,
 					tt.config.RoutingKey,
 					false,
@@ -78,6 +80,7 @@ func TestPublisher_SendMessage(t *testing.T) {
 				).AnyTimes()
 			} else {
 				ch.EXPECT().Publish(
+					tt.args.ctx,
 					tt.config.ExchangeName,
 					tt.config.RoutingKey,
 					false,

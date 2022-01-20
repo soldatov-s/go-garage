@@ -7,9 +7,13 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	rabbitmqchan "github.com/soldatov-s/go-garage/providers/rabbitmq/channel"
+	"github.com/soldatov-s/go-garage/ucpool"
 	"github.com/streadway/amqp"
 	"golang.org/x/sync/errgroup"
 )
+
+var ErrClosed = errors.New("conn/channel closed")
 
 type ChannelPoolItemKey struct {
 	Queue    string
@@ -18,230 +22,482 @@ type ChannelPoolItemKey struct {
 	Key      string
 }
 
-type Connection struct {
-	dsn            string
-	backoffPolicy  []time.Duration
-	conn           *amqp.Connection
-	serviceChannel *amqp.Channel
-	mu             sync.RWMutex
-	channelPool    map[ChannelPoolItemKey]*amqp.Channel
-	channelPoolMu  sync.RWMutex
-	isClosed       bool
-	errorGroup     *errgroup.Group
-	chanCtx        context.Context
+type RabbitMQPool struct {
+	dsn           string
+	backoffPolicy []time.Duration
+	connPool      *ucpool.Pool
+	isClosed      bool
 }
 
-func NewConnection(dsn string, backoffPolicy []time.Duration) (*Connection, error) {
-	conn := &Connection{
+func NewRabbitMQPool(
+	ctx context.Context, dsn string, backoffPolicy []time.Duration) (*RabbitMQPool, error) {
+	connDriver := NewDriver(dsn)
+
+	conn := &RabbitMQPool{
 		dsn:           dsn,
 		backoffPolicy: backoffPolicy,
+		connPool:      ucpool.OpenPool(ctx, connDriver),
 	}
 
 	return conn, nil
 }
 
-// OriConn returns original connection to rabbitmq
-func (c *Connection) OriConn() *amqp.Connection {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.conn
-}
-
-// Channel returns original channel to rabbitmq
-func (c *Connection) Channel() (*amqp.Channel, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	channel, err := c.conn.Channel()
-	if err != nil {
-		return nil, errors.Wrap(err, "open a channel")
+// Connect connects to rabbitmq and autoreconnect when we lost connection.
+func (p *RabbitMQPool) Connect(ctx context.Context, errorGroup *errgroup.Group) (*Connection, error) {
+	if p.isClosed {
+		return nil, ErrClosed
 	}
 
-	return channel, nil
-}
-
-func (c *Connection) Close(_ context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.isClosed = true
-
-	for _, ch := range c.channelPool {
-		if err := ch.Close(); err != nil {
-			return errors.Wrap(err, "close rabbitMQ channel")
-		}
+	c := &Connection{
+		rabbitPool: p,
+		errorGroup: errorGroup,
 	}
 
-	if err := c.conn.Close(); err != nil {
+	if err := c.Init(ctx); err != nil {
+		return nil, errors.Wrap(err, "init conn")
+	}
+
+	c.startWatcher(ctx)
+
+	return c, nil
+}
+
+func (p *RabbitMQPool) Close(_ context.Context) error {
+	p.isClosed = true
+	if err := p.connPool.Close(); err != nil {
 		return errors.Wrap(err, "close rabbitMQ connection")
 	}
 
 	return nil
 }
 
-func (c *Connection) IsClosed() bool {
-	return c.isClosed
+func (p *RabbitMQPool) IsClosed() bool {
+	return p.isClosed
 }
 
-func (c *Connection) connect(_ context.Context) error {
+func (p *RabbitMQPool) Ping(ctx context.Context) error {
+	conn, err := p.getConnFromPool(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get conn from pool")
+	}
+
+	if err := conn.Close(); err != nil {
+		return errors.Wrap(err, "close conn")
+	}
+	return nil
+}
+
+func (p *RabbitMQPool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error) {
+	conn, err := p.connPool.Conn(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get conn from pool")
+	}
+
+	return conn, nil
+}
+
+type Connection struct {
+	errorGroup  *errgroup.Group
+	rabbitPool  *RabbitMQPool
+	isClosed    bool
+	conn        *ucpool.Conn
+	mu          sync.RWMutex
+	channelPool *ucpool.Pool
+}
+
+func (c *Connection) Init(ctx context.Context) error {
 	var err error
-	if c.conn, err = amqp.Dial(c.dsn); err != nil {
-		return errors.Wrap(err, "connect to rabbitMQ")
+	c.conn, err = c.rabbitPool.getConnFromPool(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get conn from pool")
 	}
 
-	if c.serviceChannel, err = c.conn.Channel(); err != nil {
-		return errors.Wrap(err, "create service rabbitMQ channel")
+	if err := c.createChannelPool(ctx); err != nil {
+		return errors.Wrap(err, "create channel pool")
 	}
-
-	c.channelPool = make(map[ChannelPoolItemKey]*amqp.Channel)
 
 	return nil
 }
 
-// Connect auto reconnect to rabbitmq when we lost connection.
-func (c *Connection) Connect(ctx context.Context, errorGroup *errgroup.Group) error {
-	if !c.isClosed {
-		if err := c.connect(ctx); err != nil {
-			return errors.Wrap(err, "connect")
-		}
-	}
-
-	c.errorGroup = errorGroup
-	c.chanCtx = ctx
-
+func (c *Connection) startWatcher(ctx context.Context) {
 	c.errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
 		logger.Info().Msg("starting connection watcher")
 
 		for {
-			select {
-			case <-ctx.Done():
-				logger.Info().Msg("connection watcher stopped")
-				return ctx.Err()
-			default:
-				reason, ok := <-c.conn.NotifyClose(make(chan *amqp.Error))
-				if !ok {
-					if c.isClosed {
-						return nil
-					}
-					logger.Err(reason).Msg("rabbitMQ connection unexpected closed")
-
-					c.mu.Lock()
-					for _, timeout := range c.backoffPolicy {
-						if connErr := c.connect(ctx); connErr != nil {
-							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-							time.Sleep(timeout)
-							continue
+			if errConnHelper := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case reason, ok := <-rabbitMQConn.NotifyClose(make(chan *amqp.Error)):
+					if !ok {
+						if c.IsClosed() {
+							return nil
 						}
-						break
+						return errors.Wrap(reason, "unexpected closed")
 					}
-					c.mu.Unlock()
 				}
+				return nil
+			}); errConnHelper != nil {
+				c.mu.Lock()
+				for _, timeout := range c.rabbitPool.backoffPolicy {
+					var connErr error
+					if connErr = c.Init(ctx); connErr != nil {
+						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+						time.Sleep(timeout)
+						continue
+					}
+					break
+				}
+				c.mu.Unlock()
 			}
 		}
 	})
+}
+
+func (c *Connection) createChannelPool(ctx context.Context) error {
+	if err := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
+		driverChannel := rabbitmqchan.NewDriver(rabbitMQConn)
+		c.channelPool = ucpool.OpenPool(ctx, driverChannel)
+		return nil
+	}); err != nil {
+		return errors.New("open channel pool")
+	}
 
 	return nil
 }
 
-func (c *Connection) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.serviceChannel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+func (c *Connection) IsClosed() bool {
+	return c.isClosed || c.rabbitPool.isClosed
 }
 
-func (c *Connection) QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+func (c *Connection) Close(ctx context.Context) error {
+	if c.isClosed {
+		return nil
+	}
 
-	return c.serviceChannel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
+	c.isClosed = true
+
+	if err := c.conn.Close(); err != nil {
+		return errors.Wrap(err, "close connection in pool")
+	}
+
+	return nil
 }
 
-func (c *Connection) QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+func (c *Connection) connHelper(ctx context.Context, fc func(rabbitMQConn *amqp.Connection) error) error {
+	driverConn, releaser, err := c.conn.GrabConn(ctx)
+	if err != nil {
+		return errors.Wrap(err, "GrabConn amqp.Connection")
+	}
 
-	return c.serviceChannel.QueueBind(name, key, exchange, noWait, args)
+	// Get conn as *amqp.Connection
+	rabbitMQConn, ok := driverConn.GetCi().(*amqp.Connection)
+	if !ok {
+		return errors.Wrap(err, "typecast to *amqp.Connection")
+	}
+
+	driverConn.WithLock(func() {
+		err = fc(rabbitMQConn)
+	})
+	releaser(err)
+
+	return err
+}
+
+// Channel return channel object with auto reconnecting when we lost channel.
+func (c *Connection) Channel(ctx context.Context) (*Channel, error) {
+	if c.isClosed {
+		return nil, ErrClosed
+	}
+
+	var err error
+
+	channel := &Channel{
+		conn: c,
+	}
+	channel.channel, err = c.channelPool.Conn(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get conn from pool")
+	}
+
+	channel.startWatcher(ctx)
+
+	return channel, nil
+}
+
+func (c *Connection) ExchangeDeclare(
+	ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	channel, err := c.Channel(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get channel")
+	}
+
+	if err := channel.ExchangeDeclare(ctx, name, kind, durable, autoDelete, internal, noWait, args); err != nil {
+		return errors.Wrap(err, "exchange declare")
+	}
+
+	return nil
+}
+
+func (c *Connection) QueueDeclare(
+	ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	channel, err := c.Channel(ctx)
+	if err != nil {
+		return amqp.Queue{}, errors.Wrap(err, "get channel")
+	}
+
+	queue, err := channel.QueueDeclare(ctx, name, durable, autoDelete, exclusive, noWait, args)
+	if err != nil {
+		return amqp.Queue{}, errors.Wrap(err, "queue declare")
+	}
+
+	return queue, nil
+}
+
+func (c *Connection) QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error {
+	channel, err := c.Channel(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get channel")
+	}
+
+	if err := channel.QueueBind(ctx, name, key, exchange, noWait, args); err != nil {
+		return errors.Wrap(err, "exchange declare")
+	}
+
+	return nil
 }
 
 func (c *Connection) Consume(
+	ctx context.Context,
+	queue, consumer string,
+	autoAck, exclusive, noLocal, noWait bool,
+	args amqp.Table) (<-chan amqp.Delivery, error) {
+	deliveries := make(chan amqp.Delivery)
+
+	channel, err := c.Channel(ctx)
+	if err != nil {
+		close(deliveries)
+		return deliveries, errors.Wrap(err, "get channel")
+	}
+
+	ch, err := channel.Consume(ctx, queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+	if err != nil {
+		close(deliveries)
+		return deliveries, errors.Wrap(err, "exchange declare")
+	}
+
+	return ch, nil
+}
+
+// nolint:gocritic // pass msg without pointer as in original func in amqp
+func (c *Connection) Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	channel, err := c.Channel(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get channel")
+	}
+
+	if err := channel.Publish(ctx, exchange, key, mandatory, immediate, msg); err != nil {
+		return errors.Wrap(err, "publish")
+	}
+
+	return nil
+}
+
+type Channel struct {
+	conn     *Connection
+	isClosed bool
+	channel  *ucpool.Conn
+	mu       sync.RWMutex
+}
+
+func (c *Channel) startWatcher(ctx context.Context) {
+	c.conn.errorGroup.Go(func() error {
+		logger := zerolog.Ctx(ctx)
+		logger.Info().Msg("starting connection watcher")
+
+		for {
+			if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+				select {
+				case <-ctx.Done():
+					c.isClosed = true
+					return ctx.Err()
+				case reason, ok := <-rabbitMQChannel.NotifyClose(make(chan *amqp.Error)):
+					if !ok {
+						if c.IsClosed() {
+							break
+						}
+						return errors.Wrap(reason, "unexpected closed")
+					}
+				}
+				return nil
+			}); err != nil {
+				c.mu.Lock()
+				for _, timeout := range c.conn.rabbitPool.backoffPolicy {
+					var connErr error
+					if c.channel, connErr = c.conn.channelPool.Conn(ctx); connErr != nil {
+						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+						time.Sleep(timeout)
+						continue
+					}
+					break
+				}
+				c.mu.Unlock()
+			}
+		}
+	})
+}
+
+func (c *Channel) IsClosed() bool {
+	return c.isClosed || c.conn.IsClosed()
+}
+
+func (c *Channel) channelHelper(ctx context.Context, fc func(rabbitMQChann *amqp.Channel) error) error {
+	driverChannel, releaser, err := c.channel.GrabConn(ctx)
+	if err != nil {
+		return errors.Wrap(err, "GrabConn amqp.Channel")
+	}
+
+	// Get conn as *amqp.Channel
+	rabbitMQChann, ok := driverChannel.GetCi().(*amqp.Channel)
+	if !ok {
+		return errors.Wrap(err, "typecast to *amqp.Channel")
+	}
+
+	driverChannel.WithLock(func() {
+		err = fc(rabbitMQChann)
+	})
+	releaser(err)
+
+	return err
+}
+
+func (c *Channel) Close(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.isClosed {
+		return nil
+	}
+
+	c.isClosed = true
+
+	if err := c.channel.Close(); err != nil {
+		return errors.Wrap(err, "close channel in pool")
+	}
+
+	return nil
+}
+
+func (c *Channel) ExchangeDeclare(
+	ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.IsClosed() {
+		return ErrClosed
+	}
+
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		return rabbitMQChannel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+	}); err != nil {
+		if err != nil {
+			return errors.Wrap(err, "channel helper")
+		}
+	}
+
+	return nil
+}
+
+func (c *Channel) QueueDeclare(
+	ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var queue amqp.Queue
+	if c.IsClosed() {
+		return queue, ErrClosed
+	}
+
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		var errChannel error
+		queue, errChannel = rabbitMQChannel.QueueDeclare(name, durable, autoDelete, exclusive, noWait, args)
+		return errChannel
+	}); err != nil {
+		if err != nil {
+			return queue, errors.Wrap(err, "channel helper")
+		}
+	}
+
+	return queue, nil
+}
+
+func (c *Channel) QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.IsClosed() {
+		return ErrClosed
+	}
+
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		return rabbitMQChannel.QueueBind(name, key, exchange, noWait, args)
+	}); err != nil {
+		if err != nil {
+			return errors.Wrap(err, "channel helper")
+		}
+	}
+
+	return nil
+}
+
+func (c *Channel) Consume(
+	ctx context.Context,
 	queue, consumer string,
 	autoAck, exclusive, noLocal, noWait bool,
 	args amqp.Table) (<-chan amqp.Delivery, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	ch, err := c.GetChannelFromPool("", "", queue, consumer)
-	if err != nil {
-		return nil, errors.Wrap(err, "get channel from pool")
+	deliveries := make(chan amqp.Delivery)
+
+	if c.IsClosed() {
+		close(deliveries)
+		return deliveries, ErrClosed
 	}
 
-	return ch.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
-}
+	var ch <-chan amqp.Delivery
 
-// nolint:gocritic // pass msg without pointer as in original func in amqp
-func (c *Connection) Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	ch, err := c.GetChannelFromPool(exchange, key, "", "")
-	if err != nil {
-		return errors.Wrap(err, "get channel from pool")
-	}
-
-	return ch.Publish(exchange, key, mandatory, immediate, msg)
-}
-
-func (c *Connection) GetChannelFromPool(exchange, key, queue, consumer string) (*amqp.Channel, error) {
-	c.channelPoolMu.Lock()
-	defer c.channelPoolMu.Unlock()
-	var err error
-	poolKey := ChannelPoolItemKey{
-		Exchange: exchange,
-		Key:      key,
-		Queue:    queue,
-		Consumer: consumer,
-	}
-	ch, ok := c.channelPool[poolKey]
-	if !ok {
-		ch, err = c.conn.Channel()
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		var errChannel error
+		ch, errChannel = rabbitMQChannel.Consume(queue, consumer, autoAck, exclusive, noLocal, noWait, args)
+		return errChannel
+	}); err != nil {
 		if err != nil {
-			return nil, errors.Wrap(err, "create channel")
+			close(deliveries)
+			return deliveries, errors.Wrap(err, "channel helper")
 		}
-		c.channelPool[poolKey] = ch
-		c.chanWatcher(poolKey)
 	}
 
 	return ch, nil
 }
 
-func (c *Connection) chanWatcher(poolKey ChannelPoolItemKey) {
-	ch := c.channelPool[poolKey]
+// nolint:gocritic // pass msg without pointer as in original func in amqp
+func (c *Channel) Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	c.errorGroup.Go(func() error {
-		logger := zerolog.Ctx(c.chanCtx)
-		logger.Info().Msg("starting channel watcher")
+	if c.IsClosed() {
+		return ErrClosed
+	}
 
-		for {
-			select {
-			case <-c.chanCtx.Done():
-				logger.Info().Msg("channel watcher stopped")
-				return c.chanCtx.Err()
-			default:
-				reason, ok := <-ch.NotifyClose(make(chan *amqp.Error))
-				if !ok {
-					if c.isClosed {
-						return nil
-					}
-					logger.Err(reason).Msg("rabbitMQ channel unexpected closed")
-					c.channelPoolMu.Lock()
-					delete(c.channelPool, poolKey)
-					c.channelPoolMu.Unlock()
-					return nil
-				}
-			}
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		return rabbitMQChannel.Publish(exchange, key, mandatory, immediate, msg)
+	}); err != nil {
+		if err != nil {
+			return errors.Wrap(err, "channel helper")
 		}
-	})
+	}
+
+	return nil
 }

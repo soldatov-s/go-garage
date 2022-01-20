@@ -11,7 +11,6 @@ import (
 	rabbitmqconsum "github.com/soldatov-s/go-garage/providers/rabbitmq/consumer"
 	rabbitmqpub "github.com/soldatov-s/go-garage/providers/rabbitmq/publisher"
 	"github.com/soldatov-s/go-garage/x/stringsx"
-	"github.com/streadway/amqp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,7 +24,7 @@ type Enity struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	config     *Config
-	conn       *rabbitmqcon.Connection
+	conn       *rabbitmqcon.RabbitMQPool
 	consumers  map[string]*rabbitmqconsum.Consumer
 	publishers map[string]*rabbitmqpub.Publisher
 }
@@ -52,7 +51,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	}
 
 	var err error
-	e.conn, err = rabbitmqcon.NewConnection(e.config.DSN, e.config.BackoffPolicy)
+	e.conn, err = rabbitmqcon.NewRabbitMQPool(ctx, e.config.DSN, e.config.BackoffPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "create connection")
 	}
@@ -68,7 +67,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	return e, nil
 }
 
-func (e *Enity) GetConn() *rabbitmqcon.Connection {
+func (e *Enity) GetConn() *rabbitmqcon.RabbitMQPool {
 	return e.conn
 }
 
@@ -76,13 +75,18 @@ func (e *Enity) GetConfig() *Config {
 	return e.config
 }
 
-func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config) (*rabbitmqconsum.Consumer, error) {
+func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config, errorGroup *errgroup.Group) (*rabbitmqconsum.Consumer, error) {
 	name := stringsx.JoinStrings("_", config.ExchangeName, config.RabbitQueue, config.RabbitConsume, config.RoutingKey)
 	if _, ok := e.consumers[name]; ok {
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, e.conn)
+	conn, err := e.conn.Connect(ctx, errorGroup)
+	if err != nil {
+		return nil, errors.Wrap(err, "connect")
+	}
+
+	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -95,13 +99,18 @@ func (e *Enity) AddConsumer(ctx context.Context, config *rabbitmqconsum.Config) 
 	return consumer, nil
 }
 
-func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config) (*rabbitmqpub.Publisher, error) {
+func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config, errorGroup *errgroup.Group) (*rabbitmqpub.Publisher, error) {
 	name := stringsx.JoinStrings("_", config.ExchangeName, config.RoutingKey)
 	if _, ok := e.consumers[name]; ok {
 		return nil, errors.Wrapf(base.ErrConflictName, "name is %q", name)
 	}
 
-	publisher, err := rabbitmqpub.NewPublisher(ctx, config, e.conn)
+	conn, err := e.conn.Connect(ctx, errorGroup)
+	if err != nil {
+		return nil, errors.Wrap(err, "connect")
+	}
+
+	publisher, err := rabbitmqpub.NewPublisher(ctx, config, conn)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
@@ -116,13 +125,8 @@ func (e *Enity) AddPublisher(ctx context.Context, config *rabbitmqpub.Config) (*
 
 // Ping checks that rabbitMQ connections is live
 func (e *Enity) Ping(ctx context.Context) error {
-	client, err := amqp.Dial(e.config.DSN)
-	if err != nil {
-		return errors.Wrap(err, "ampq dial")
-	}
-
-	if err := client.Close(); err != nil {
-		return errors.Wrap(err, "close client")
+	if err := e.conn.Ping(ctx); err != nil {
+		return errors.Wrap(err, "ping")
 	}
 	return nil
 }
@@ -130,14 +134,7 @@ func (e *Enity) Ping(ctx context.Context) error {
 func (e *Enity) Start(ctx context.Context, errorGroup *errgroup.Group) error {
 	logger := e.GetLogger(ctx)
 
-	if e.conn.OriConn() != nil {
-		return nil
-	}
 	logger.Info().Msg("establishing connection...")
-
-	if err := e.conn.Connect(ctx, errorGroup); err != nil {
-		return errors.Wrap(err, "connect")
-	}
 
 	// Connection watcher will be started in any case, but only if
 	// it wasn't launched before.

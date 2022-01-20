@@ -43,10 +43,12 @@ func TestConsumer_Subscribe(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			ch := NewMockConnector(ctrl)
 			ch.EXPECT().ExchangeDeclare(
+				ctx,
 				tt.fields.config.ExchangeName,
 				"direct",
 				true,
@@ -57,6 +59,7 @@ func TestConsumer_Subscribe(t *testing.T) {
 			).AnyTimes()
 
 			ch.EXPECT().QueueDeclare(
+				ctx,
 				tt.fields.config.RabbitQueue, // name
 				true,                         // durable
 				false,                        // delete when unused
@@ -66,6 +69,7 @@ func TestConsumer_Subscribe(t *testing.T) {
 			).AnyTimes()
 
 			ch.EXPECT().QueueBind(
+				ctx,
 				tt.fields.config.RabbitQueue,  // queue name
 				tt.fields.config.RoutingKey,   // routing key
 				tt.fields.config.ExchangeName, // exchange
@@ -78,6 +82,7 @@ func TestConsumer_Subscribe(t *testing.T) {
 			msgOut := (<-chan amqp.Delivery)(msg)
 
 			ch.EXPECT().Consume(
+				ctx,
 				tt.fields.config.RabbitQueue,   // queue
 				tt.fields.config.RabbitConsume, // consume
 				false,                          // auto-ack
@@ -89,7 +94,6 @@ func TestConsumer_Subscribe(t *testing.T) {
 
 			ch.EXPECT().IsClosed().AnyTimes().Return(false)
 
-			ctx := context.Background()
 			ctx = log.Logger.WithContext(ctx)
 			errorGroup, ctx := errgroup.WithContext(ctx)
 
