@@ -44,6 +44,9 @@ func TestConsumer_Subscribe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
+			ctx = log.Logger.WithContext(ctx)
+			errorGroup, ctx := errgroup.WithContext(ctx)
+
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			ch := NewMockConnector(ctrl)
@@ -93,9 +96,6 @@ func TestConsumer_Subscribe(t *testing.T) {
 			).AnyTimes().Return(msgOut, nil)
 
 			ch.EXPECT().IsClosed().AnyTimes().Return(false)
-
-			ctx = log.Logger.WithContext(ctx)
-			errorGroup, ctx := errgroup.WithContext(ctx)
 
 			subs := NewMockSubscriber(ctrl)
 			subs.EXPECT().Shutdown(ctx).AnyTimes()
