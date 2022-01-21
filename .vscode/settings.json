@@ -9,6 +9,7 @@
         "restclient",
         "types",
         "x",
-        "scripts"
+        "scripts",
+        "ucpool"
     ]
 }
