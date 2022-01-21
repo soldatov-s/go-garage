@@ -87,6 +87,26 @@ func (p *RabbitMQPool) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (p *RabbitMQPool) Stat() *ucpool.PoolStats {
+	return p.connPool.Stats()
+}
+
+func (p *RabbitMQPool) SetMaxOpenConns(n int) {
+	p.connPool.SetMaxOpenConns(n)
+}
+
+func (p *RabbitMQPool) SetMaxIdleConns(n int) {
+	p.connPool.SetMaxIdleConns(n)
+}
+
+func (p *RabbitMQPool) SetConnMaxLifetime(d time.Duration) {
+	p.connPool.SetConnMaxLifetime(d)
+}
+
+func (p *RabbitMQPool) SetConnMaxIdleTime(d time.Duration) {
+	p.connPool.SetConnMaxIdleTime(d)
+}
+
 func (p *RabbitMQPool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error) {
 	conn, err := p.connPool.Conn(ctx)
 	if err != nil {
@@ -103,6 +123,11 @@ type Connection struct {
 	conn        *ucpool.Conn
 	mu          sync.RWMutex
 	channelPool *ucpool.Pool
+
+	maxOpenConns    int
+	maxIdleConns    int
+	connMaxLifetime time.Duration
+	connMaxIdleTime time.Duration
 }
 
 func (c *Connection) Init(ctx context.Context) error {
@@ -128,6 +153,8 @@ func (c *Connection) startWatcher(ctx context.Context) {
 			if errConnHelper := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
 				select {
 				case <-ctx.Done():
+					c.isClosed = true
+					logger.Debug().Msg("connection watcher stopped")
 					return ctx.Err()
 				case reason, ok := <-rabbitMQConn.NotifyClose(make(chan *amqp.Error)):
 					if !ok {
@@ -159,6 +186,11 @@ func (c *Connection) createChannelPool(ctx context.Context) error {
 	if err := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
 		driverChannel := rabbitmqchan.NewDriver(rabbitMQConn)
 		c.channelPool = ucpool.OpenPool(ctx, driverChannel)
+
+		c.channelPool.SetMaxOpenConns(c.maxOpenConns)
+		c.channelPool.SetMaxIdleConns(c.maxIdleConns)
+		c.channelPool.SetConnMaxLifetime(c.connMaxLifetime)
+		c.channelPool.SetConnMaxIdleTime(c.connMaxIdleTime)
 		return nil
 	}); err != nil {
 		return errors.New("open channel pool")
@@ -183,6 +215,30 @@ func (c *Connection) Close(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *Connection) Stat() *ucpool.PoolStats {
+	return c.channelPool.Stats()
+}
+
+func (c *Connection) SetMaxOpenChannels(n int) {
+	c.maxOpenConns = n
+	c.channelPool.SetMaxOpenConns(n)
+}
+
+func (c *Connection) SetMaxIdleChannels(n int) {
+	c.maxIdleConns = n
+	c.channelPool.SetMaxIdleConns(n)
+}
+
+func (c *Connection) SetChannelMaxLifetime(d time.Duration) {
+	c.connMaxLifetime = d
+	c.channelPool.SetConnMaxLifetime(d)
+}
+
+func (c *Connection) SetChannelMaxIdleTime(d time.Duration) {
+	c.connMaxIdleTime = d
+	c.channelPool.SetConnMaxIdleTime(d)
 }
 
 func (c *Connection) connHelper(ctx context.Context, fc func(rabbitMQConn *amqp.Connection) error) error {
@@ -230,11 +286,15 @@ func (c *Connection) ExchangeDeclare(
 	ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel")
+		return errors.Wrap(err, "get channel from pool")
 	}
 
 	if err := channel.ExchangeDeclare(ctx, name, kind, durable, autoDelete, internal, noWait, args); err != nil {
 		return errors.Wrap(err, "exchange declare")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -244,12 +304,16 @@ func (c *Connection) QueueDeclare(
 	ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return amqp.Queue{}, errors.Wrap(err, "get channel")
+		return amqp.Queue{}, errors.Wrap(err, "get channel from pool")
 	}
 
 	queue, err := channel.QueueDeclare(ctx, name, durable, autoDelete, exclusive, noWait, args)
 	if err != nil {
 		return amqp.Queue{}, errors.Wrap(err, "queue declare")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return amqp.Queue{}, errors.Wrap(err, "return channel to pool")
 	}
 
 	return queue, nil
@@ -258,11 +322,15 @@ func (c *Connection) QueueDeclare(
 func (c *Connection) QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel")
+		return errors.Wrap(err, "get channel from pool")
 	}
 
 	if err := channel.QueueBind(ctx, name, key, exchange, noWait, args); err != nil {
 		return errors.Wrap(err, "exchange declare")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -278,7 +346,7 @@ func (c *Connection) Consume(
 	channel, err := c.Channel(ctx)
 	if err != nil {
 		close(deliveries)
-		return deliveries, errors.Wrap(err, "get channel")
+		return deliveries, errors.Wrap(err, "get channel from pool")
 	}
 
 	ch, err := channel.Consume(ctx, queue, consumer, autoAck, exclusive, noLocal, noWait, args)
@@ -294,11 +362,15 @@ func (c *Connection) Consume(
 func (c *Connection) Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel")
+		return errors.Wrap(err, "get channel from pool")
 	}
 
 	if err := channel.Publish(ctx, exchange, key, mandatory, immediate, msg); err != nil {
 		return errors.Wrap(err, "publish")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -314,13 +386,14 @@ type Channel struct {
 func (c *Channel) startWatcher(ctx context.Context) {
 	c.conn.errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
-		logger.Info().Msg("starting connection watcher")
+		logger.Info().Msg("starting channel watcher")
 
 		for {
 			if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
 				select {
 				case <-ctx.Done():
 					c.isClosed = true
+					logger.Debug().Msg("channel watcher stopped")
 					return ctx.Err()
 				case reason, ok := <-rabbitMQChannel.NotifyClose(make(chan *amqp.Error)):
 					if !ok {
