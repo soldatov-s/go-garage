@@ -277,8 +277,6 @@ func (c *Connection) Channel(ctx context.Context) (*Channel, error) {
 		return nil, errors.Wrap(err, "get channel from pool")
 	}
 
-	channel.startWatcher(ctx)
-
 	return channel, nil
 }
 
@@ -535,6 +533,8 @@ func (c *Channel) Consume(
 			return deliveries, errors.Wrap(err, "channel helper")
 		}
 	}
+
+	c.startWatcher(ctx)
 
 	return ch, nil
 }
