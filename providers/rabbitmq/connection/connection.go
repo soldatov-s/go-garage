@@ -274,7 +274,7 @@ func (c *Connection) Channel(ctx context.Context) (*Channel, error) {
 	}
 	channel.channel, err = c.channelPool.Conn(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "get conn from pool")
+		return nil, errors.Wrap(err, "get channel from pool")
 	}
 
 	channel.startWatcher(ctx)
@@ -286,15 +286,11 @@ func (c *Connection) ExchangeDeclare(
 	ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel from pool")
+		return errors.Wrap(err, "create channel")
 	}
 
 	if err := channel.ExchangeDeclare(ctx, name, kind, durable, autoDelete, internal, noWait, args); err != nil {
 		return errors.Wrap(err, "exchange declare")
-	}
-
-	if err := channel.Close(ctx); err != nil {
-		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -304,16 +300,12 @@ func (c *Connection) QueueDeclare(
 	ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return amqp.Queue{}, errors.Wrap(err, "get channel from pool")
+		return amqp.Queue{}, errors.Wrap(err, "create channel")
 	}
 
 	queue, err := channel.QueueDeclare(ctx, name, durable, autoDelete, exclusive, noWait, args)
 	if err != nil {
 		return amqp.Queue{}, errors.Wrap(err, "queue declare")
-	}
-
-	if err := channel.Close(ctx); err != nil {
-		return amqp.Queue{}, errors.Wrap(err, "return channel to pool")
 	}
 
 	return queue, nil
@@ -322,15 +314,11 @@ func (c *Connection) QueueDeclare(
 func (c *Connection) QueueBind(ctx context.Context, name, key, exchange string, noWait bool, args amqp.Table) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel from pool")
+		return errors.Wrap(err, "create channel")
 	}
 
 	if err := channel.QueueBind(ctx, name, key, exchange, noWait, args); err != nil {
 		return errors.Wrap(err, "exchange declare")
-	}
-
-	if err := channel.Close(ctx); err != nil {
-		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -346,7 +334,7 @@ func (c *Connection) Consume(
 	channel, err := c.Channel(ctx)
 	if err != nil {
 		close(deliveries)
-		return deliveries, errors.Wrap(err, "get channel from pool")
+		return deliveries, errors.Wrap(err, "create channel")
 	}
 
 	ch, err := channel.Consume(ctx, queue, consumer, autoAck, exclusive, noLocal, noWait, args)
@@ -367,10 +355,6 @@ func (c *Connection) Publish(ctx context.Context, exchange, key string, mandator
 
 	if err := channel.Publish(ctx, exchange, key, mandatory, immediate, msg); err != nil {
 		return errors.Wrap(err, "publish")
-	}
-
-	if err := channel.Close(ctx); err != nil {
-		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
