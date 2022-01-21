@@ -1,4 +1,4 @@
-package rabbitmqcon
+package rabbitmqpool
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	rabbitmqchan "github.com/soldatov-s/go-garage/providers/rabbitmq/channel"
+	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	"github.com/soldatov-s/go-garage/ucpool"
 	"github.com/streadway/amqp"
 	"golang.org/x/sync/errgroup"
@@ -15,42 +16,41 @@ import (
 
 var ErrClosed = errors.New("conn/channel closed")
 
-type ChannelPoolItemKey struct {
-	Queue    string
-	Consumer string
-	Exchange string
-	Key      string
+type Pool struct {
+	config   *Config
+	connPool *ucpool.Pool
+	isClosed bool
 }
 
-type RabbitMQPool struct {
-	dsn           string
-	backoffPolicy []time.Duration
-	connPool      *ucpool.Pool
-	isClosed      bool
-}
+func NewPool(ctx context.Context, config *Config) (*Pool, error) {
+	connDriver := rabbitmqcon.NewDriver(config.DSN)
 
-func NewRabbitMQPool(
-	ctx context.Context, dsn string, backoffPolicy []time.Duration) (*RabbitMQPool, error) {
-	connDriver := NewDriver(dsn)
-
-	conn := &RabbitMQPool{
-		dsn:           dsn,
-		backoffPolicy: backoffPolicy,
-		connPool:      ucpool.OpenPool(ctx, connDriver),
+	pool := &Pool{
+		config:   config,
+		connPool: ucpool.OpenPool(ctx, connDriver),
 	}
 
-	return conn, nil
+	pool.SetConnMaxIdleTime(pool.config.ConnMaxIdleTime)
+	pool.SetConnMaxLifetime(pool.config.ConnMaxLifetime)
+	pool.SetMaxIdleConns(pool.config.MaxIdleConns)
+	pool.SetMaxOpenConns(pool.config.MaxOpenConns)
+
+	return pool, nil
 }
 
 // Connect connects to rabbitmq and autoreconnect when we lost connection.
-func (p *RabbitMQPool) Connect(ctx context.Context, errorGroup *errgroup.Group) (*Connection, error) {
+func (p *Pool) Connect(ctx context.Context, errorGroup *errgroup.Group) (*Connection, error) {
 	if p.isClosed {
 		return nil, ErrClosed
 	}
 
 	c := &Connection{
-		rabbitPool: p,
-		errorGroup: errorGroup,
+		rabbitPool:         p,
+		errorGroup:         errorGroup,
+		maxOpenChannels:    p.config.MaxOpenChannelsPerConn,
+		maxIdleChannels:    p.config.MaxIdleChannelsPerConn,
+		channelMaxLifetime: p.config.ChannelMaxLifetime,
+		channelMaxIdleTime: p.config.ChannelMaxIdleTime,
 	}
 
 	if err := c.Init(ctx); err != nil {
@@ -62,7 +62,7 @@ func (p *RabbitMQPool) Connect(ctx context.Context, errorGroup *errgroup.Group) 
 	return c, nil
 }
 
-func (p *RabbitMQPool) Close(_ context.Context) error {
+func (p *Pool) Close(_ context.Context) error {
 	p.isClosed = true
 	if err := p.connPool.Close(); err != nil {
 		return errors.Wrap(err, "close rabbitMQ connection")
@@ -71,11 +71,11 @@ func (p *RabbitMQPool) Close(_ context.Context) error {
 	return nil
 }
 
-func (p *RabbitMQPool) IsClosed() bool {
+func (p *Pool) IsClosed() bool {
 	return p.isClosed
 }
 
-func (p *RabbitMQPool) Ping(ctx context.Context) error {
+func (p *Pool) Ping(ctx context.Context) error {
 	conn, err := p.getConnFromPool(ctx)
 	if err != nil {
 		return errors.Wrap(err, "get conn from pool")
@@ -87,27 +87,27 @@ func (p *RabbitMQPool) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (p *RabbitMQPool) Stat() *ucpool.PoolStats {
+func (p *Pool) Stat() *ucpool.PoolStats {
 	return p.connPool.Stats()
 }
 
-func (p *RabbitMQPool) SetMaxOpenConns(n int) {
+func (p *Pool) SetMaxOpenConns(n int) {
 	p.connPool.SetMaxOpenConns(n)
 }
 
-func (p *RabbitMQPool) SetMaxIdleConns(n int) {
+func (p *Pool) SetMaxIdleConns(n int) {
 	p.connPool.SetMaxIdleConns(n)
 }
 
-func (p *RabbitMQPool) SetConnMaxLifetime(d time.Duration) {
+func (p *Pool) SetConnMaxLifetime(d time.Duration) {
 	p.connPool.SetConnMaxLifetime(d)
 }
 
-func (p *RabbitMQPool) SetConnMaxIdleTime(d time.Duration) {
+func (p *Pool) SetConnMaxIdleTime(d time.Duration) {
 	p.connPool.SetConnMaxIdleTime(d)
 }
 
-func (p *RabbitMQPool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error) {
+func (p *Pool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error) {
 	conn, err := p.connPool.Conn(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "get conn from pool")
@@ -118,7 +118,7 @@ func (p *RabbitMQPool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error
 
 type Connection struct {
 	errorGroup  *errgroup.Group
-	rabbitPool  *RabbitMQPool
+	rabbitPool  *Pool
 	isClosed    bool
 	conn        *ucpool.Conn
 	mu          sync.RWMutex
@@ -167,7 +167,7 @@ func (c *Connection) startWatcher(ctx context.Context) {
 				return nil
 			}); errConnHelper != nil {
 				c.mu.Lock()
-				for _, timeout := range c.rabbitPool.backoffPolicy {
+				for _, timeout := range c.rabbitPool.config.BackoffPolicy {
 					var connErr error
 					if connErr = c.Init(ctx); connErr != nil {
 						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
@@ -390,7 +390,7 @@ func (c *Channel) startWatcher(ctx context.Context) {
 				return nil
 			}); err != nil {
 				c.mu.Lock()
-				for _, timeout := range c.conn.rabbitPool.backoffPolicy {
+				for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
 					var connErr error
 					if c.channel, connErr = c.conn.channelPool.Conn(ctx); connErr != nil {
 						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")

@@ -7,8 +7,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/soldatov-s/go-garage/base"
-	rabbitmqcon "github.com/soldatov-s/go-garage/providers/rabbitmq/connection"
 	rabbitmqconsum "github.com/soldatov-s/go-garage/providers/rabbitmq/consumer"
+	rabbitmqpool "github.com/soldatov-s/go-garage/providers/rabbitmq/pool"
 	rabbitmqpub "github.com/soldatov-s/go-garage/providers/rabbitmq/publisher"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"golang.org/x/sync/errgroup"
@@ -24,7 +24,7 @@ type Enity struct {
 	*base.MetricsStorage
 	*base.ReadyCheckStorage
 	config     *Config
-	conn       *rabbitmqcon.RabbitMQPool
+	conn       *rabbitmqpool.Pool
 	consumers  map[string]*rabbitmqconsum.Consumer
 	publishers map[string]*rabbitmqpub.Publisher
 }
@@ -51,7 +51,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	}
 
 	var err error
-	e.conn, err = rabbitmqcon.NewRabbitMQPool(ctx, e.config.DSN, e.config.BackoffPolicy)
+	e.conn, err = rabbitmqpool.NewPool(ctx, e.config.PoolConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "create connection")
 	}
@@ -67,7 +67,7 @@ func NewEnity(ctx context.Context, name string, config *Config) (*Enity, error) 
 	return e, nil
 }
 
-func (e *Enity) GetConn() *rabbitmqcon.RabbitMQPool {
+func (e *Enity) GetConn() *rabbitmqpool.Pool {
 	return e.conn
 }
 
@@ -207,7 +207,7 @@ func (e *Enity) shutdown(ctx context.Context) error {
 
 func (e *Enity) buildMetrics(_ context.Context) error {
 	fullName := e.GetFullName()
-	redactedDSN, err := stringsx.RedactedDSN(e.config.DSN)
+	redactedDSN, err := stringsx.RedactedDSN(e.config.PoolConfig.DSN)
 	if err != nil {
 		return errors.Wrap(err, "redacted dsn")
 	}
