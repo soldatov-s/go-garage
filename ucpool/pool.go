@@ -546,13 +546,13 @@ type PoolStats struct {
 }
 
 // Stats returns connection statistics.
-func (db *Pool) Stats() PoolStats {
+func (db *Pool) Stats() *PoolStats {
 	wait := atomic.LoadInt64(&db.waitDuration)
 
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	stats := PoolStats{
+	stats := &PoolStats{
 		MaxOpenConnections: db.maxOpen,
 
 		Idle:            len(db.freeConn),
