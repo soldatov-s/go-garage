@@ -124,10 +124,10 @@ type Connection struct {
 	mu          sync.RWMutex
 	channelPool *ucpool.Pool
 
-	maxOpenConns    int
-	maxIdleConns    int
-	connMaxLifetime time.Duration
-	connMaxIdleTime time.Duration
+	maxOpenChannels    int
+	maxIdleChannels    int
+	channelMaxLifetime time.Duration
+	channelMaxIdleTime time.Duration
 }
 
 func (c *Connection) Init(ctx context.Context) error {
@@ -187,10 +187,10 @@ func (c *Connection) createChannelPool(ctx context.Context) error {
 		driverChannel := rabbitmqchan.NewDriver(rabbitMQConn)
 		c.channelPool = ucpool.OpenPool(ctx, driverChannel)
 
-		c.channelPool.SetMaxOpenConns(c.maxOpenConns)
-		c.channelPool.SetMaxIdleConns(c.maxIdleConns)
-		c.channelPool.SetConnMaxLifetime(c.connMaxLifetime)
-		c.channelPool.SetConnMaxIdleTime(c.connMaxIdleTime)
+		c.channelPool.SetMaxOpenConns(c.maxOpenChannels)
+		c.channelPool.SetMaxIdleConns(c.maxIdleChannels)
+		c.channelPool.SetConnMaxLifetime(c.channelMaxLifetime)
+		c.channelPool.SetConnMaxIdleTime(c.channelMaxIdleTime)
 		return nil
 	}); err != nil {
 		return errors.New("open channel pool")
@@ -222,22 +222,22 @@ func (c *Connection) Stat() *ucpool.PoolStats {
 }
 
 func (c *Connection) SetMaxOpenChannels(n int) {
-	c.maxOpenConns = n
+	c.maxOpenChannels = n
 	c.channelPool.SetMaxOpenConns(n)
 }
 
 func (c *Connection) SetMaxIdleChannels(n int) {
-	c.maxIdleConns = n
+	c.maxIdleChannels = n
 	c.channelPool.SetMaxIdleConns(n)
 }
 
 func (c *Connection) SetChannelMaxLifetime(d time.Duration) {
-	c.connMaxLifetime = d
+	c.channelMaxLifetime = d
 	c.channelPool.SetConnMaxLifetime(d)
 }
 
 func (c *Connection) SetChannelMaxIdleTime(d time.Duration) {
-	c.connMaxIdleTime = d
+	c.channelMaxIdleTime = d
 	c.channelPool.SetConnMaxIdleTime(d)
 }
 
