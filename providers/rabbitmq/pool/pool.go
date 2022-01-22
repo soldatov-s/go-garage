@@ -150,36 +150,55 @@ func (c *Connection) startWatcher(ctx context.Context) {
 		logger.Info().Msg("starting connection watcher")
 
 		for {
-			if errConnHelper := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
-				select {
-				case <-ctx.Done():
-					c.isClosed = true
-					logger.Debug().Msg("connection watcher stopped")
-					return ctx.Err()
-				case reason, ok := <-rabbitMQConn.NotifyClose(make(chan *amqp.Error)):
-					if !ok {
-						if c.IsClosed() {
-							return nil
+			if err := c.notifyClose(ctx); err != nil {
+				switch {
+				case errors.Is(err, context.Canceled),
+					errors.Is(err, context.DeadlineExceeded):
+					return err
+				default:
+					c.mu.Lock()
+					// remove the failed conn from pool
+					if err := c.conn.Close(); err != nil {
+						logger.Err(err).Msg("close conn in pool")
+					}
+					for _, timeout := range c.rabbitPool.config.BackoffPolicy {
+						var connErr error
+						if connErr = c.Init(ctx); connErr != nil {
+							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+							time.Sleep(timeout)
+							continue
 						}
-						return errors.Wrap(reason, "unexpected closed")
+						break
 					}
+					c.mu.Unlock()
 				}
-				return nil
-			}); errConnHelper != nil {
-				c.mu.Lock()
-				for _, timeout := range c.rabbitPool.config.BackoffPolicy {
-					var connErr error
-					if connErr = c.Init(ctx); connErr != nil {
-						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-						time.Sleep(timeout)
-						continue
-					}
-					break
-				}
-				c.mu.Unlock()
 			}
 		}
 	})
+}
+
+func (c *Connection) notifyClose(ctx context.Context) error {
+	logger := zerolog.Ctx(ctx)
+	if err := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
+		select {
+		case <-ctx.Done():
+			c.isClosed = true
+			logger.Debug().Msg("connection watcher stopped")
+			return ctx.Err()
+		case reason, ok := <-rabbitMQConn.NotifyClose(make(chan *amqp.Error)):
+			if !ok {
+				if c.IsClosed() {
+					return nil
+				}
+				return errors.Wrap(reason, "unexpected closed")
+			}
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "conn helper")
+	}
+
+	return nil
 }
 
 func (c *Connection) createChannelPool(ctx context.Context) error {
@@ -387,36 +406,54 @@ func (c *Channel) startWatcher(ctx context.Context) {
 		logger.Info().Msg("starting channel watcher")
 
 		for {
-			if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
-				select {
-				case <-ctx.Done():
-					c.isClosed = true
-					logger.Debug().Msg("channel watcher stopped")
-					return ctx.Err()
-				case reason, ok := <-rabbitMQChannel.NotifyClose(make(chan *amqp.Error)):
-					if !ok {
-						if c.IsClosed() {
-							break
+			if err := c.notifyClose(ctx); err != nil {
+				switch {
+				case errors.Is(err, context.Canceled),
+					errors.Is(err, context.DeadlineExceeded):
+					return err
+				default:
+					c.mu.Lock()
+					// remove the failed channel from pool
+					if err := c.channel.Close(); err != nil {
+						logger.Err(err).Msg("close channel in pool")
+					}
+					for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
+						var connErr error
+						if c.channel, connErr = c.conn.channelPool.Conn(ctx); connErr != nil {
+							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+							time.Sleep(timeout)
+							continue
 						}
-						return errors.Wrap(reason, "unexpected closed")
+						break
 					}
+					c.mu.Unlock()
 				}
-				return nil
-			}); err != nil {
-				c.mu.Lock()
-				for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
-					var connErr error
-					if c.channel, connErr = c.conn.channelPool.Conn(ctx); connErr != nil {
-						logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-						time.Sleep(timeout)
-						continue
-					}
-					break
-				}
-				c.mu.Unlock()
 			}
 		}
 	})
+}
+
+func (c *Channel) notifyClose(ctx context.Context) error {
+	logger := zerolog.Ctx(ctx)
+	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
+		select {
+		case <-ctx.Done():
+			c.isClosed = true
+			logger.Debug().Msg("channel watcher stopped")
+			return ctx.Err()
+		case reason, ok := <-rabbitMQChannel.NotifyClose(make(chan *amqp.Error)):
+			if !ok {
+				if c.IsClosed() {
+					break
+				}
+				return errors.Wrap(reason, "unexpected closed")
+			}
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "channelHelper")
+	}
+	return nil
 }
 
 func (c *Channel) IsClosed() bool {
