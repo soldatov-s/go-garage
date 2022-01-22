@@ -291,6 +291,10 @@ func (c *Connection) ExchangeDeclare(
 		return errors.Wrap(err, "exchange declare")
 	}
 
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
+	}
+
 	return nil
 }
 
@@ -306,6 +310,10 @@ func (c *Connection) QueueDeclare(
 		return amqp.Queue{}, errors.Wrap(err, "queue declare")
 	}
 
+	if err := channel.Close(ctx); err != nil {
+		return amqp.Queue{}, errors.Wrap(err, "return channel to pool")
+	}
+
 	return queue, nil
 }
 
@@ -317,6 +325,10 @@ func (c *Connection) QueueBind(ctx context.Context, name, key, exchange string, 
 
 	if err := channel.QueueBind(ctx, name, key, exchange, noWait, args); err != nil {
 		return errors.Wrap(err, "exchange declare")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
@@ -353,6 +365,10 @@ func (c *Connection) Publish(ctx context.Context, exchange, key string, mandator
 
 	if err := channel.Publish(ctx, exchange, key, mandatory, immediate, msg); err != nil {
 		return errors.Wrap(err, "publish")
+	}
+
+	if err := channel.Close(ctx); err != nil {
+		return errors.Wrap(err, "return channel to pool")
 	}
 
 	return nil
