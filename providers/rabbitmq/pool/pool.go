@@ -120,12 +120,13 @@ func (p *Pool) getConnFromPool(ctx context.Context) (*ucpool.Conn, error) {
 }
 
 type Connection struct {
-	errorGroup  *errgroup.Group
-	rabbitPool  *Pool
-	isClosed    bool
-	conn        *ucpool.Conn
-	mu          sync.RWMutex
-	channelPool *ucpool.Pool
+	errorGroup    *errgroup.Group
+	rabbitPool    *Pool
+	isClosed      bool
+	conn          *ucpool.Conn
+	mu            sync.RWMutex
+	channelPool   *ucpool.Pool
+	muChannelPool sync.RWMutex
 
 	maxOpenChannels    int
 	maxIdleChannels    int
@@ -205,6 +206,8 @@ func (c *Connection) notifyClose(ctx context.Context) error {
 }
 
 func (c *Connection) createChannelPool(ctx context.Context) error {
+	c.muChannelPool.Lock()
+	defer c.muChannelPool.Unlock()
 	if c.channelPool != nil {
 		if err := c.channelPool.Close(); err != nil {
 			return errors.Wrap(err, "close channel pool")
@@ -227,12 +230,24 @@ func (c *Connection) createChannelPool(ctx context.Context) error {
 }
 
 func (c *Connection) getChannelFromPool(ctx context.Context) (*ucpool.Conn, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.muChannelPool.Lock()
+	defer c.muChannelPool.Unlock()
 
 	channel, err := c.channelPool.Conn(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "get channel from pool")
+	}
+
+	return channel, nil
+}
+
+func (c *Connection) GetChannelFromPool(ctx context.Context) (*ucpool.Conn, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	channel, err := c.getChannelFromPool(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "Get channel from pool")
 	}
 
 	return channel, nil
@@ -312,7 +327,7 @@ func (c *Connection) Channel(ctx context.Context) (*Channel, error) {
 	channel := &Channel{
 		conn: c,
 	}
-	if err := channel.Init(ctx); err != nil {
+	if err := channel.init(ctx); err != nil {
 		return nil, errors.Wrap(err, "init channel")
 	}
 
@@ -451,6 +466,16 @@ func (c *Channel) startWatcher(ctx context.Context) {
 }
 
 func (c *Channel) Init(ctx context.Context) error {
+	var err error
+	c.channel, err = c.conn.GetChannelFromPool(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get channel from pool")
+	}
+
+	return nil
+}
+
+func (c *Channel) init(ctx context.Context) error {
 	var err error
 	c.channel, err = c.conn.getChannelFromPool(ctx)
 	if err != nil {
