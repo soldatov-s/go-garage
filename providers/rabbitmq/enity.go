@@ -84,10 +84,15 @@ func (e *Enity) AddConsumer(
 
 	conn, err := e.conn.Connect(ctx, errorGroup)
 	if err != nil {
-		return nil, errors.Wrap(err, "connect")
+		return nil, errors.Wrap(err, "create connect")
 	}
 
-	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, conn)
+	channel, err := conn.Channel(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "create channel")
+	}
+
+	consumer, err := rabbitmqconsum.NewConsumer(ctx, config, channel)
 	if err != nil {
 		return nil, errors.Wrap(err, "new consumer")
 	}
