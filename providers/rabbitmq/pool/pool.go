@@ -76,6 +76,7 @@ func (p *Pool) IsClosed() bool {
 }
 
 func (p *Pool) Ping(ctx context.Context) error {
+	logger := zerolog.Ctx(ctx)
 	conn, err := p.getConnFromPool(ctx)
 	if err != nil {
 		return errors.Wrap(err, "get conn from pool")
@@ -84,6 +85,8 @@ func (p *Pool) Ping(ctx context.Context) error {
 	if err := conn.Close(); err != nil {
 		return errors.Wrap(err, "close conn")
 	}
+
+	logger.Debug().Msg("ping")
 	return nil
 }
 
@@ -157,10 +160,6 @@ func (c *Connection) startWatcher(ctx context.Context) {
 					return err
 				default:
 					c.mu.Lock()
-					// remove the failed conn from pool
-					if err := c.conn.Close(); err != nil {
-						logger.Err(err).Msg("close conn in pool")
-					}
 					for _, timeout := range c.rabbitPool.config.BackoffPolicy {
 						var connErr error
 						if connErr = c.Init(ctx); connErr != nil {
@@ -168,6 +167,7 @@ func (c *Connection) startWatcher(ctx context.Context) {
 							time.Sleep(timeout)
 							continue
 						}
+						logger.Debug().Msg("reconnected")
 						break
 					}
 					c.mu.Unlock()
@@ -190,6 +190,9 @@ func (c *Connection) notifyClose(ctx context.Context) error {
 				if c.IsClosed() {
 					return nil
 				}
+				if reason == nil {
+					return amqp.ErrClosed
+				}
 				return errors.Wrap(reason, "unexpected closed")
 			}
 		}
@@ -202,6 +205,11 @@ func (c *Connection) notifyClose(ctx context.Context) error {
 }
 
 func (c *Connection) createChannelPool(ctx context.Context) error {
+	if c.channelPool != nil {
+		if err := c.channelPool.Close(); err != nil {
+			return errors.Wrap(err, "close channel pool")
+		}
+	}
 	if err := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
 		driverChannel := rabbitmqchan.NewDriver(rabbitMQConn)
 		c.channelPool = ucpool.OpenPool(ctx, driverChannel)
@@ -216,6 +224,18 @@ func (c *Connection) createChannelPool(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *Connection) getChannelFromPool(ctx context.Context) (*ucpool.Conn, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	channel, err := c.channelPool.Conn(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "get channel from pool")
+	}
+
+	return channel, nil
 }
 
 func (c *Connection) IsClosed() bool {
@@ -282,18 +302,18 @@ func (c *Connection) connHelper(ctx context.Context, fc func(rabbitMQConn *amqp.
 
 // Channel return channel object with auto reconnecting when we lost channel.
 func (c *Connection) Channel(ctx context.Context) (*Channel, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.isClosed {
 		return nil, ErrClosed
 	}
 
-	var err error
-
 	channel := &Channel{
 		conn: c,
 	}
-	channel.channel, err = c.channelPool.Conn(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "get channel from pool")
+	if err := channel.Init(ctx); err != nil {
+		return nil, errors.Wrap(err, "init channel")
 	}
 
 	return channel, nil
@@ -379,7 +399,7 @@ func (c *Connection) Consume(
 func (c *Connection) Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
 	channel, err := c.Channel(ctx)
 	if err != nil {
-		return errors.Wrap(err, "get channel from pool")
+		return errors.Wrap(err, "create channel")
 	}
 
 	if err := channel.Publish(ctx, exchange, key, mandatory, immediate, msg); err != nil {
@@ -413,17 +433,14 @@ func (c *Channel) startWatcher(ctx context.Context) {
 					return err
 				default:
 					c.mu.Lock()
-					// remove the failed channel from pool
-					if err := c.channel.Close(); err != nil {
-						logger.Err(err).Msg("close channel in pool")
-					}
 					for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
 						var connErr error
-						if c.channel, connErr = c.conn.channelPool.Conn(ctx); connErr != nil {
+						if connErr = c.Init(ctx); connErr != nil {
 							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
 							time.Sleep(timeout)
 							continue
 						}
+						logger.Debug().Msg("channel reconnected")
 						break
 					}
 					c.mu.Unlock()
@@ -431,6 +448,16 @@ func (c *Channel) startWatcher(ctx context.Context) {
 			}
 		}
 	})
+}
+
+func (c *Channel) Init(ctx context.Context) error {
+	var err error
+	c.channel, err = c.conn.getChannelFromPool(ctx)
+	if err != nil {
+		return errors.Wrap(err, "get channel from pool")
+	}
+
+	return nil
 }
 
 func (c *Channel) notifyClose(ctx context.Context) error {
@@ -445,6 +472,9 @@ func (c *Channel) notifyClose(ctx context.Context) error {
 			if !ok {
 				if c.IsClosed() {
 					break
+				}
+				if reason == nil {
+					return amqp.ErrClosed
 				}
 				return errors.Wrap(reason, "unexpected closed")
 			}
