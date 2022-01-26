@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
+	rabbitmqpool "github.com/soldatov-s/go-garage/providers/rabbitmq/pool"
 	"github.com/soldatov-s/go-garage/x/stringsx"
 	"github.com/streadway/amqp"
 )
@@ -21,6 +22,7 @@ const (
 type Connector interface {
 	ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	Publish(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	StartWatcher(ctx context.Context, fn rabbitmqpool.WatcherFn) error
 }
 
 // Publisher is a RabbitPublisher
@@ -54,20 +56,12 @@ func NewPublisher(ctx context.Context, config *Config, ch Connector) (*Publisher
 	return enity, nil
 }
 
-func (p *Publisher) connect(ctx context.Context) error {
-	p.muConn.Lock()
-	defer p.muConn.Unlock()
-	if p.isConnected {
-		return nil
-	}
-
+func (p *Publisher) watcherHandler(ctx context.Context) error {
 	if err := p.conn.ExchangeDeclare(ctx, p.config.ExchangeName, "direct", true,
 		false, false,
 		false, nil); err != nil {
 		return errors.Wrap(err, "declare a exchange")
 	}
-
-	p.isConnected = true
 
 	return nil
 }
@@ -85,10 +79,14 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 
 	logger.Debug().Msgf("send message: %s", string(body))
 
+	p.muConn.Lock()
+	defer p.muConn.Unlock()
+
 	if !p.isConnected {
-		if err := p.connect(ctx); err != nil {
-			logger.Err(err).Msg("connect publisher to rabbitMQ")
+		if errWatcher := p.conn.StartWatcher(ctx, p.watcherHandler); errWatcher != nil {
+			return errors.Wrap(errWatcher, "start watcher")
 		}
+		p.isConnected = true
 	}
 
 	// We try to send message twice. Between attempts we try to reconnect.
@@ -109,13 +107,6 @@ func (p *Publisher) SendMessage(ctx context.Context, message interface{}) error 
 }
 
 func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) error {
-	logger := zerolog.Ctx(ctx)
-	if !p.isConnected {
-		if err := p.connect(ctx); err != nil {
-			logger.Err(err).Msg("connect publisher to rabbitMQ")
-		}
-	}
-
 	if err := p.conn.Publish(
 		ctx,
 		p.config.ExchangeName,
@@ -124,9 +115,6 @@ func (p *Publisher) sendMessage(ctx context.Context, ampqMsg *amqp.Publishing) e
 		false,
 		*ampqMsg,
 	); err != nil {
-		p.muConn.Lock()
-		p.isConnected = false
-		p.muConn.Unlock()
 		return errors.Wrap(err, "publish a message")
 	}
 	return nil

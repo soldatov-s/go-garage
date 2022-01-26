@@ -57,8 +57,6 @@ func (p *Pool) Connect(ctx context.Context, errorGroup *errgroup.Group) (*Connec
 		return nil, errors.Wrap(err, "init conn")
 	}
 
-	c.startWatcher(ctx)
-
 	return c, nil
 }
 
@@ -148,38 +146,57 @@ func (c *Connection) Init(ctx context.Context) error {
 	return nil
 }
 
-func (c *Connection) startWatcher(ctx context.Context) {
+type WatcherFn func(ctx context.Context) error
+
+func (c *Connection) StartWatcher(ctx context.Context, fn WatcherFn) error {
+	if fn != nil {
+		if err := fn(ctx); err != nil {
+			return errors.Wrap(err, "connection watcher handler")
+		}
+	}
+
 	c.errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
 		logger.Info().Msg("starting connection watcher")
 
 		for {
-			if err := c.notifyClose(ctx); err != nil {
+			if err := c.notifyClose(ctx, fn); err != nil {
 				switch {
 				case errors.Is(err, context.Canceled),
 					errors.Is(err, context.DeadlineExceeded):
 					return err
 				default:
-					c.mu.Lock()
-					for _, timeout := range c.rabbitPool.config.BackoffPolicy {
-						var connErr error
-						if connErr = c.Init(ctx); connErr != nil {
-							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-							time.Sleep(timeout)
-							continue
-						}
-						logger.Debug().Msg("reconnected")
-						break
-					}
-					c.mu.Unlock()
+					c.backOff(ctx)
 				}
 			}
 		}
 	})
+
+	return nil
 }
 
-func (c *Connection) notifyClose(ctx context.Context) error {
+func (c *Connection) backOff(ctx context.Context) {
 	logger := zerolog.Ctx(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, timeout := range c.rabbitPool.config.BackoffPolicy {
+		if connErr := c.Init(ctx); connErr != nil {
+			logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+			time.Sleep(timeout)
+			continue
+		}
+		logger.Debug().Msg("connection reconnected")
+		break
+	}
+}
+
+func (c *Connection) notifyClose(ctx context.Context, fn WatcherFn) error {
+	logger := zerolog.Ctx(ctx)
+	if fn != nil {
+		if err := fn(ctx); err != nil {
+			return errors.Wrap(err, "connection watcher handler")
+		}
+	}
 	if err := c.connHelper(ctx, func(rabbitMQConn *amqp.Connection) error {
 		select {
 		case <-ctx.Done():
@@ -435,34 +452,46 @@ type Channel struct {
 	mu       sync.RWMutex
 }
 
-func (c *Channel) startWatcher(ctx context.Context) {
+func (c *Channel) StartWatcher(ctx context.Context, fn WatcherFn) error {
+	if fn != nil {
+		if err := fn(ctx); err != nil {
+			return errors.Wrap(err, "channel watcher handler")
+		}
+	}
+
 	c.conn.errorGroup.Go(func() error {
 		logger := zerolog.Ctx(ctx)
 		logger.Info().Msg("starting channel watcher")
 
 		for {
-			if err := c.notifyClose(ctx); err != nil {
+			if err := c.notifyClose(ctx, fn); err != nil {
 				switch {
 				case errors.Is(err, context.Canceled),
 					errors.Is(err, context.DeadlineExceeded):
 					return err
 				default:
-					c.mu.Lock()
-					for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
-						var connErr error
-						if connErr = c.Init(ctx); connErr != nil {
-							logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
-							time.Sleep(timeout)
-							continue
-						}
-						logger.Debug().Msg("channel reconnected")
-						break
-					}
-					c.mu.Unlock()
+					c.backOff(ctx)
 				}
 			}
 		}
 	})
+
+	return nil
+}
+
+func (c *Channel) backOff(ctx context.Context) {
+	logger := zerolog.Ctx(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, timeout := range c.conn.rabbitPool.config.BackoffPolicy {
+		if connErr := c.Init(ctx); connErr != nil {
+			logger.Err(connErr).Msg("connection failed, trying to reconnect to rabbitMQ")
+			time.Sleep(timeout)
+			continue
+		}
+		logger.Debug().Msg("channel reconnected")
+		break
+	}
 }
 
 func (c *Channel) Init(ctx context.Context) error {
@@ -485,8 +514,13 @@ func (c *Channel) init(ctx context.Context) error {
 	return nil
 }
 
-func (c *Channel) notifyClose(ctx context.Context) error {
+func (c *Channel) notifyClose(ctx context.Context, fn WatcherFn) error {
 	logger := zerolog.Ctx(ctx)
+	if fn != nil {
+		if err := fn(ctx); err != nil {
+			return errors.Wrap(err, "channel watcher handler")
+		}
+	}
 	if err := c.channelHelper(ctx, func(rabbitMQChannel *amqp.Channel) error {
 		select {
 		case <-ctx.Done():
@@ -641,8 +675,6 @@ func (c *Channel) Consume(
 			return deliveries, errors.Wrap(err, "channel helper")
 		}
 	}
-
-	c.startWatcher(ctx)
 
 	return ch, nil
 }

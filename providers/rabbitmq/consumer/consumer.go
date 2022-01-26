@@ -2,11 +2,11 @@ package rabbitmqconsum
 
 import (
 	"context"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/soldatov-s/go-garage/base"
+	rabbitmqpool "github.com/soldatov-s/go-garage/providers/rabbitmq/pool"
 	"github.com/streadway/amqp"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,6 +20,7 @@ type Connector interface {
 	//nolint:lll // long the function signature
 	Consume(ctx context.Context, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
 	IsClosed() bool
+	StartWatcher(ctx context.Context, fn rabbitmqpool.WatcherFn) error
 }
 
 // Consumer is a RabbitConsumer
@@ -45,51 +46,90 @@ func NewConsumer(ctx context.Context, config *Config, ch Connector) (*Consumer, 
 	return c, nil
 }
 
-func (c *Consumer) connect(ctx context.Context) (<-chan amqp.Delivery, error) {
-	if err := c.conn.ExchangeDeclare(ctx, c.config.ExchangeName, "direct", true,
-		false, false,
-		false, nil); err != nil {
-		return nil, errors.Wrap(err, "declare a exchange")
-	}
+func (c *Consumer) watcherHandler(ctx context.Context, errorGroup *errgroup.Group, subscriber Subscriber) rabbitmqpool.WatcherFn {
+	return func(ctx context.Context) error {
+		logger := zerolog.Ctx(ctx)
 
-	if _, err := c.conn.QueueDeclare(
-		ctx,
-		c.config.RabbitQueue, // name
-		true,                 // durable
-		false,                // delete when unused
-		false,                // exclusive
-		false,                // no-wait
-		nil,                  // arguments
-	); err != nil {
-		return nil, errors.Wrap(err, "declare a queue")
-	}
+		logger.Debug().Msg("ExchangeDeclare")
+		if err := c.conn.ExchangeDeclare(ctx, c.config.ExchangeName, "direct", true,
+			false, false,
+			false, nil); err != nil {
+			return errors.Wrap(err, "declare a exchange")
+		}
 
-	if err := c.conn.QueueBind(
-		ctx,
-		c.config.RabbitQueue,  // queue name
-		c.config.RoutingKey,   // routing key
-		c.config.ExchangeName, // exchange
-		false,
-		nil,
-	); err != nil {
-		return nil, errors.Wrap(err, "bind to queue")
-	}
+		logger.Debug().Msg("QueueDeclare")
+		if _, err := c.conn.QueueDeclare(
+			ctx,
+			c.config.RabbitQueue, // name
+			true,                 // durable
+			false,                // delete when unused
+			false,                // exclusive
+			false,                // no-wait
+			nil,                  // arguments
+		); err != nil {
+			return errors.Wrap(err, "declare a queue")
+		}
 
-	msg, err := c.conn.Consume(
-		ctx,
-		c.config.RabbitQueue,   // queue
-		c.config.RabbitConsume, // consume
-		false,                  // auto-ack
-		false,                  // exclusive
-		false,                  // no-local
-		false,                  // no-wait
-		nil,                    // args
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "consume message")
-	}
+		logger.Debug().Msg("QueueBind")
+		if err := c.conn.QueueBind(
+			ctx,
+			c.config.RabbitQueue,  // queue name
+			c.config.RoutingKey,   // routing key
+			c.config.ExchangeName, // exchange
+			false,
+			nil,
+		); err != nil {
+			return errors.Wrap(err, "bind to queue")
+		}
 
-	return msg, nil
+		logger.Debug().Msg("Consume")
+		msg, err := c.conn.Consume(
+			ctx,
+			c.config.RabbitQueue,   // queue
+			c.config.RabbitConsume, // consume
+			false,                  // auto-ack
+			false,                  // exclusive
+			false,                  // no-local
+			false,                  // no-wait
+			nil,                    // args
+		)
+		if err != nil {
+			return errors.Wrap(err, "consume message")
+		}
+
+		errorGroup.Go(func() error {
+			logger.Info().Msg("start consumer")
+			for {
+				select {
+				case <-ctx.Done():
+					logger.Info().Msg("connection watcher stopped")
+					if err := subscriber.Shutdown(ctx); err != nil {
+						logger.Err(err).Msg("shutdown handler")
+					}
+					return ctx.Err()
+				case d, ok := <-msg:
+					if ok {
+						logger.Debug().Msgf("got new event %+v", string(d.Body))
+						if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
+							logger.Err(errConsume).Msg("consume message")
+						}
+						if err := d.Ack(true); err != nil {
+							logger.Err(err).Msg("ack")
+						}
+					} else {
+						if c.conn.IsClosed() {
+							return nil
+						}
+
+						logger.Info().Msg("try to reconnect consumer")
+						return nil
+					}
+				}
+			}
+		})
+
+		return nil
+	}
 }
 
 // Subscriber describes interface with methods for subscriber
@@ -98,59 +138,11 @@ type Subscriber interface {
 	Shutdown(ctx context.Context) error
 }
 
-func (c *Consumer) subscribe(ctx context.Context, errorGroup *errgroup.Group, subscriber Subscriber) error {
-	logger := zerolog.Ctx(ctx)
-	var msg <-chan amqp.Delivery
-	var err error
-
-	for {
-		if msg, err = c.connect(ctx); err != nil {
-			logger.Err(err).Msg("connect consumer to rabbitMQ")
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		break
-	}
-
-	logger.Info().Msg("consumer connected")
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Info().Msg("connection watcher stopped")
-			if err := subscriber.Shutdown(ctx); err != nil {
-				logger.Err(err).Msg("shutdown handler")
-			}
-			return ctx.Err()
-		case d, ok := <-msg:
-			if ok {
-				logger.Debug().Msgf("got new event %+v", string(d.Body))
-				if errConsume := subscriber.Consume(ctx, d.Body); errConsume != nil {
-					logger.Err(errConsume).Msg("consume message")
-				}
-				if err := d.Ack(true); err != nil {
-					logger.Err(err).Msg("ack")
-				}
-			} else {
-				if c.conn.IsClosed() {
-					return nil
-				}
-
-				logger.Info().Msg("try to reconnect consumer")
-				errorGroup.Go(func() error {
-					return c.subscribe(ctx, errorGroup, subscriber)
-				})
-				return nil
-			}
-		}
-	}
-}
-
 // Subscribe to channel for receiving message
 func (c *Consumer) Subscribe(ctx context.Context, errorGroup *errgroup.Group, subscriber Subscriber) error {
-	errorGroup.Go(func() error {
-		return c.subscribe(ctx, errorGroup, subscriber)
-	})
+	if errWatcher := c.conn.StartWatcher(ctx, c.watcherHandler(ctx, errorGroup, subscriber)); errWatcher != nil {
+		return errors.Wrap(errWatcher, "start watcher")
+	}
 
 	return nil
 }

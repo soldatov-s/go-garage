@@ -87,6 +87,10 @@ func (e *Enity) AddConsumer(
 		return nil, errors.Wrap(err, "create connect")
 	}
 
+	if errWatcher := conn.StartWatcher(ctx, nil); errWatcher != nil {
+		return nil, errors.Wrap(errWatcher, "start conn watcher")
+	}
+
 	channel, err := conn.Channel(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "create channel")
