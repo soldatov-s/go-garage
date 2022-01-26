@@ -9,6 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	rabbitmqpool "github.com/soldatov-s/go-garage/providers/rabbitmq/pool"
 	amqp "github.com/streadway/amqp"
 )
 
@@ -105,6 +106,20 @@ func (m *MockConnector) QueueDeclare(ctx context.Context, name string, durable, 
 func (mr *MockConnectorMockRecorder) QueueDeclare(ctx, name, durable, autoDelete, exclusive, noWait, args interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueDeclare", reflect.TypeOf((*MockConnector)(nil).QueueDeclare), ctx, name, durable, autoDelete, exclusive, noWait, args)
+}
+
+// StartWatcher mocks base method.
+func (m *MockConnector) StartWatcher(ctx context.Context, fn rabbitmqpool.WatcherFn) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StartWatcher", ctx, fn)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StartWatcher indicates an expected call of StartWatcher.
+func (mr *MockConnectorMockRecorder) StartWatcher(ctx, fn interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWatcher", reflect.TypeOf((*MockConnector)(nil).StartWatcher), ctx, fn)
 }
 
 // MockSubscriber is a mock of Subscriber interface.

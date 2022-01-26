@@ -13,6 +13,9 @@ import (
 
 //go:generate mockgen --source=./consumer.go -destination=./consumer_mocks_test.go -package=rabbitmqconsum_test
 
+//nolint:lll // long generate command
+//go:generate mockgen --source=../../../vendor/github.com/streadway/amqp/delivery.go -destination=./delivery_mocks_test.go -package=rabbitmqconsum_test
+
 type Connector interface {
 	ExchangeDeclare(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
 	QueueDeclare(ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
