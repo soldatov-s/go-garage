@@ -44,8 +44,7 @@ func (h *TracingHook) Run(e *zerolog.Event, level zerolog.Level, msg string) {
 			fileName, lineNo := frame.FileLine(pc)
 			e = e.Str("function", functionName)
 			e = e.Str("file", fileName)
-			// nolint:staticcheck,wastedassign // skip SA4006
-			e = e.Int("line", lineNo)
+			e.Int("line", lineNo)
 		}
 	}
 }
