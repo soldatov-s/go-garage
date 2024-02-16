@@ -107,7 +107,7 @@ func NewMeta(deps *MetaDeps) *Meta {
 }
 
 func (m *Meta) BuildInfo() string {
-	return m.Version + ", builded: " + m.Builded + ", hash: " + m.Hash
+	return fmt.Sprintf("%s, builded: %s, hash: %s", m.Version, m.Builded, m.Hash)
 }
 
 type Manager struct {

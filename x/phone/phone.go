@@ -6,9 +6,9 @@ import (
 
 // Normalize normilizes phone
 func Normilize(phone string) (string, error) {
-	normEmail := strings.TrimSpace(phone)
-	normEmail = strings.TrimPrefix(normEmail, "+")
-	normEmail = strings.ReplaceAll(normEmail, "-", "")
-	normEmail = strings.ReplaceAll(normEmail, " ", "")
-	return normEmail, nil
+	normPhone := strings.TrimSpace(phone)
+	normPhone = strings.TrimPrefix(normPhone, "+")
+	normPhone = strings.ReplaceAll(normPhone, "-", "")
+	normPhone = strings.ReplaceAll(normPhone, " ", "")
+	return normPhone, nil
 }

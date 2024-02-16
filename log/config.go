@@ -22,11 +22,6 @@ func DefaultConfig() *Config {
 		NoColoredOutput: true,
 		HumanFriendly:   false,
 		WithTrace:       false,
-	}
-}
-
-func (c *Config) SetDefault() {
-	if c.Level == "" {
-		c.Level = zerolog.InfoLevel.String()
+		Level: zerolog.InfoLevel.String(),
 	}
 }

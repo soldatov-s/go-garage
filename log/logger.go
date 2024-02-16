@@ -23,7 +23,6 @@ func NewLogger(ctx context.Context, config *Config) (*Logger, error) {
 	logger := &Logger{
 		MetricsStorage: base.NewMetricsStorage(),
 	}
-	config.SetDefault()
 	level, err := zerolog.ParseLevel(strings.ToLower(config.Level))
 	if err != nil {
 		return nil, errors.Wrap(err, "parse level")

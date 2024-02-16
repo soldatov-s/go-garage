@@ -12,6 +12,8 @@ const (
 	OUTLOOK    = "outlook.com"
 	ICLOUD     = "icloud.com"
 	YAHOO      = "yahoo.com"
+	YANDEX = "yandex.ru"
+	YA = "ya.ru"
 )
 
 var ErrNormilizeEmail = errors.New("failed to normilize email")
@@ -34,6 +36,8 @@ func Normilize(email string) (string, error) {
 	// all_lowercase
 	normEmail := strings.ToLower(email)
 
+	normEmail = strings.TrimSpace(normEmail)
+
 	user, domain, err := Parse(normEmail)
 	if err != nil {
 		return "", errors.Wrap(err, "parse email")
@@ -41,6 +45,8 @@ func Normilize(email string) (string, error) {
 
 	// Converts addresses with domain @googlemail.com to @gmail.com, as they're equivalent.
 	domain = strings.ReplaceAll(domain, GOOGLEMAIL, GMAIL)
+
+	domain = strings.ReplaceAll(domain, YANDEX, YA)
 
 	switch domain {
 	case GMAIL:
